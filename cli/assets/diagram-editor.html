@@ -398,7 +398,9 @@
     <button id="btnNew">New</button>
     <button id="btnChatAI" style="background:#378add;color:#fff;border-color:#2b6fc0;font-weight:500;">Chat with AI</button>
     <button id="btnOpen">Open</button>
-    <button id="btnSave">Save</button>
+    <button id="btnSave">Save JSON</button>
+    <button id="btnConnect" title="Connect to a local file for auto-save">Connect file</button>
+    <span id="saveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;" title="Auto-save status">auto-save off</span>
     <button id="btnExportMmd">Copy as Mermaid</button>
     <input type="file" id="fileInput" accept=".json" style="display:none">
   </div>
@@ -548,10 +550,14 @@
 
   <div class="json-pane">
     <div class="json-head">
-      <h3>File contents</h3>
+      <h3>Diagram JSON</h3>
       <span class="info" id="jsonInfo">0 nodes, 0 edges</span>
+      <span id="jsonFilePath" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;"></span>
+      <button id="btnJsonToggle" style="margin-left:auto;padding:2px 8px;font-size:11px;border:1px solid var(--line);background:var(--bg);border-radius:3px;cursor:pointer;">Edit</button>
+      <button id="btnJsonApply" style="display:none;padding:2px 8px;font-size:11px;border:1px solid var(--sel);background:var(--sel);color:#fff;border-radius:3px;cursor:pointer;margin-left:4px;">Apply</button>
     </div>
-    <pre id="jsonView"></pre>
+    <pre id="jsonView" style="flex:1;overflow:auto;"></pre>
+    <textarea id="jsonEdit" style="display:none;flex:1;margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--ink);border:none;outline:none;resize:none;background:var(--surface);overflow:auto;" spellcheck="false"></textarea>
   </div>
 </div>
 
@@ -799,10 +805,104 @@ function measureEdgeLabelWidth(text) {
   return _textMeasureCtx.measureText(text).width;
 }
 
+const __STATE_JSON_PATH__ = null; // replaced by CLI renderer
+
 let state = freshState();
 let selection = null;
 let viewport = { x: 0, y: 0, z: 1 };
 let fileName = "untitled.arch.json";
+
+// ── Auto-save via File System Access API ──────────────────────────────────
+let _fileHandle = null;
+let _saveTimer  = null;
+
+function _scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_doSave, 600);
+}
+
+async function _doSave() {
+  if (!_fileHandle) return;
+  const el = document.getElementById("saveStatus");
+  try {
+    const writable = await _fileHandle.createWritable();
+    await writable.write(JSON.stringify(state, null, 2));
+    await writable.close();
+    el.textContent = "✓ " + _fileHandle.name;
+    el.style.color = "#1d9e75";
+  } catch (e) {
+    el.textContent = "⚠ save failed";
+    el.style.color = "#d85a30";
+  }
+}
+
+async function _connectFile() {
+  if (!window.showSaveFilePicker) {
+    alert("Auto-save requires Chrome or Edge (File System Access API). Use Save JSON to export manually.");
+    return;
+  }
+  const suggested = __STATE_JSON_PATH__
+    ? __STATE_JSON_PATH__.split(/[\\/]/).pop()
+    : (fileName.replace(/\.(html|json)$/, "") + ".state.json");
+  try {
+    _fileHandle = await window.showSaveFilePicker({
+      suggestedName: suggested,
+      types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+    });
+    const el = document.getElementById("saveStatus");
+    el.textContent = "⟳ " + _fileHandle.name;
+    el.style.color = "var(--muted)";
+    if (__STATE_JSON_PATH__) {
+      document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
+    }
+    _scheduleSave();
+  } catch (e) {
+    if (e.name !== "AbortError") console.error("File connect failed:", e);
+  }
+}
+
+// ── JSON editor (bottom pane) ─────────────────────────────────────────────
+let _jsonEditMode = false;
+
+function _toggleJsonEdit() {
+  _jsonEditMode = !_jsonEditMode;
+  const view  = document.getElementById("jsonView");
+  const edit  = document.getElementById("jsonEdit");
+  const apply = document.getElementById("btnJsonApply");
+  const tog   = document.getElementById("btnJsonToggle");
+  if (_jsonEditMode) {
+    edit.value = JSON.stringify(state, null, 2);
+    view.style.display = "none";
+    edit.style.display = "";
+    apply.style.display = "";
+    tog.textContent = "View";
+    edit.focus();
+  } else {
+    view.style.display = "";
+    edit.style.display = "none";
+    apply.style.display = "none";
+    tog.textContent = "Edit";
+  }
+}
+
+function _applyJsonEdit() {
+  const ta = document.getElementById("jsonEdit");
+  try {
+    const parsed = JSON.parse(ta.value);
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges))
+      throw new Error("Top-level 'nodes' and 'edges' arrays are required.");
+    state = parsed;
+    selection = null;
+    _jsonEditMode = false;
+    document.getElementById("jsonView").style.display = "";
+    document.getElementById("jsonEdit").style.display = "none";
+    document.getElementById("btnJsonApply").style.display = "none";
+    document.getElementById("btnJsonToggle").textContent = "Edit";
+    render();
+  } catch (e) {
+    alert("Invalid JSON: " + e.message);
+  }
+}
 
 function freshState() {
   return {
@@ -1151,9 +1251,10 @@ function textareaField(label, value, onChange, rows) {
 
 function renderJson() {
   const json = JSON.stringify(state, null, 2);
-  jsonView.innerHTML = syntaxHighlight(json);
+  if (!_jsonEditMode) jsonView.innerHTML = syntaxHighlight(json);
   jsonInfo.textContent = state.nodes.length + " node" + (state.nodes.length === 1 ? "" : "s") + ", " + state.edges.length + " edge" + (state.edges.length === 1 ? "" : "s");
   fileNameEl.textContent = fileName;
+  _scheduleSave();
 }
 
 function syntaxHighlight(json) {
@@ -1427,9 +1528,18 @@ document.getElementById("btnSave").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = fileName;
+  a.download = fileName.replace(/\.html$/, ".json");
   a.click();
   URL.revokeObjectURL(url);
+});
+
+document.getElementById("btnConnect").addEventListener("click", _connectFile);
+document.getElementById("btnJsonToggle").addEventListener("click", _toggleJsonEdit);
+document.getElementById("btnJsonApply").addEventListener("click", _applyJsonEdit);
+
+// Ctrl+Enter in JSON editor applies changes
+document.getElementById("jsonEdit").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _applyJsonEdit(); }
 });
 
 document.getElementById("btnOpen").addEventListener("click", () => {
@@ -1478,6 +1588,12 @@ function toMermaid(s) {
 }
 
 render();
+
+// Show injected file path if CLI provided one
+if (__STATE_JSON_PATH__) {
+  document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
+  document.getElementById("saveStatus").title = "Auto-save target: " + __STATE_JSON_PATH__;
+}
 
 // ── AI Chat ──────────────────────────────────────────────────────────────────
 
