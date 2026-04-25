@@ -592,22 +592,179 @@
 
 <script>
 const SERVICE_META = {
-  lambda:      { label: "Lambda",      color: "#EF9F27", defaults: { runtime: "nodejs20.x", memory: 512 } },
-  ec2:         { label: "EC2",         color: "#EF9F27", defaults: { instanceType: "t3.micro" } },
-  fargate:     { label: "Fargate",     color: "#EF9F27", defaults: { cpu: 256, memory: 512 } },
-  rds:         { label: "RDS",         color: "#378add", defaults: { engine: "postgres", instanceClass: "db.t3.micro" } },
-  dynamodb:    { label: "DynamoDB",    color: "#378add", defaults: { billingMode: "PAY_PER_REQUEST" } },
-  s3:          { label: "S3",          color: "#1d9e75", defaults: {} },
-  elasticache: { label: "ElastiCache", color: "#378add", defaults: { engine: "redis" } },
-  sqs:         { label: "SQS",         color: "#d85a30", defaults: {} },
-  sns:         { label: "SNS",         color: "#d85a30", defaults: {} },
-  apigateway:  { label: "API Gateway", color: "#d85a30", defaults: {} },
-  alb:         { label: "ALB",         color: "#d85a30", defaults: {} },
-  vpc:         { label: "VPC",         color: "#888780", defaults: { cidr: "10.0.0.0/16" } },
-  cloudfront:  { label: "CloudFront",  color: "#888780", defaults: {} },
-  external:    { label: "External",    color: "#6b6b64", defaults: {} },
-  user:        { label: "User",        color: "#6b6b64", defaults: {} },
+  lambda:      { label: "Lambda",      color: "#EF9F27" },
+  ec2:         { label: "EC2",         color: "#EF9F27" },
+  fargate:     { label: "Fargate",     color: "#EF9F27" },
+  rds:         { label: "RDS",         color: "#378add" },
+  dynamodb:    { label: "DynamoDB",    color: "#378add" },
+  s3:          { label: "S3",          color: "#1d9e75" },
+  elasticache: { label: "ElastiCache", color: "#378add" },
+  sqs:         { label: "SQS",         color: "#d85a30" },
+  sns:         { label: "SNS",         color: "#d85a30" },
+  apigateway:  { label: "API Gateway", color: "#d85a30" },
+  alb:         { label: "ALB",         color: "#d85a30" },
+  vpc:         { label: "VPC",         color: "#888780" },
+  cloudfront:  { label: "CloudFront",  color: "#888780" },
+  external:    { label: "External",    color: "#6b6b64" },
+  user:        { label: "User",        color: "#6b6b64" },
 };
+
+// CDK construct mapping — used to stamp cdkConstruct on every node
+const CDK_META = {
+  lambda:      { construct: "aws_lambda.Function",                                    module: "aws-cdk-lib/aws-lambda" },
+  ec2:         { construct: "aws_ec2.Instance",                                       module: "aws-cdk-lib/aws-ec2" },
+  fargate:     { construct: "aws_ecs_patterns.ApplicationLoadBalancedFargateService", module: "aws-cdk-lib/aws-ecs-patterns" },
+  rds:         { construct: "aws_rds.DatabaseInstance",                               module: "aws-cdk-lib/aws-rds" },
+  dynamodb:    { construct: "aws_dynamodb.TableV2",                                   module: "aws-cdk-lib/aws-dynamodb" },
+  s3:          { construct: "aws_s3.Bucket",                                          module: "aws-cdk-lib/aws-s3" },
+  elasticache: { construct: "aws_elasticache.CfnReplicationGroup",                   module: "aws-cdk-lib/aws-elasticache" },
+  sqs:         { construct: "aws_sqs.Queue",                                          module: "aws-cdk-lib/aws-sqs" },
+  sns:         { construct: "aws_sns.Topic",                                          module: "aws-cdk-lib/aws-sns" },
+  apigateway:  { construct: "aws_apigatewayv2.HttpApi",                              module: "aws-cdk-lib/aws-apigatewayv2" },
+  alb:         { construct: "aws_elasticloadbalancingv2.ApplicationLoadBalancer",    module: "aws-cdk-lib/aws-elasticloadbalancingv2" },
+  vpc:         { construct: "aws_ec2.Vpc",                                            module: "aws-cdk-lib/aws-ec2" },
+  cloudfront:  { construct: "aws_cloudfront.Distribution",                            module: "aws-cdk-lib/aws-cloudfront" },
+  external:    { construct: null, module: null },
+  user:        { construct: null, module: null },
+};
+
+// Minimum CDK-complete props per service — agent fills these in, user can override in inspector
+const NODE_CDK_DEFAULTS = {
+  lambda: {
+    runtime: "NODEJS_20_X",
+    handler: "index.handler",
+    code: "lambda/handler",
+    memorySize: 512,
+    timeout: 29,
+    environment: {},
+    tracing: "Active",
+    reservedConcurrentExecutions: null,
+    layers: [],
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  ec2: {
+    instanceType: "T3_MICRO",
+    machineImage: "AMAZON_LINUX_2023",
+    keyPairName: null,
+    vpcRef: null,
+    associatePublicIpAddress: false,
+    removalPolicy: "DESTROY"
+  },
+  fargate: {
+    cpu: 256,
+    memoryLimitMiB: 512,
+    image: "amazon/amazon-ecs-sample",
+    containerPort: 80,
+    desiredCount: 1,
+    assignPublicIp: false,
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  rds: {
+    engine: "POSTGRES",
+    engineVersion: "15.4",
+    instanceClass: "T3",
+    instanceSize: "MICRO",
+    databaseName: "appdb",
+    multiAz: false,
+    storageEncrypted: true,
+    allocatedStorage: 20,
+    deletionProtection: false,
+    vpcRef: null,
+    removalPolicy: "SNAPSHOT"
+  },
+  dynamodb: {
+    partitionKey: { name: "pk", type: "STRING" },
+    sortKey: null,
+    billingMode: "PAY_PER_REQUEST",
+    stream: "NONE",
+    pointInTimeRecovery: true,
+    encryption: "AWS_MANAGED",
+    gsi: [],
+    removalPolicy: "RETAIN"
+  },
+  s3: {
+    versioned: false,
+    blockPublicAccess: "BLOCK_ALL",
+    encryption: "S3_MANAGED",
+    cors: [],
+    lifecycleRules: [],
+    removalPolicy: "RETAIN",
+    autoDeleteObjects: false
+  },
+  elasticache: {
+    engine: "redis",
+    cacheNodeType: "cache.t3.micro",
+    numCacheNodes: 1,
+    automaticFailoverEnabled: false,
+    atRestEncryptionEnabled: true,
+    transitEncryptionEnabled: true,
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  sqs: {
+    fifo: false,
+    visibilityTimeout: 30,
+    messageRetentionPeriod: 345600,
+    receiveMessageWaitTime: 0,
+    dlqRef: null,
+    maxReceiveCount: 3,
+    encryption: "KMS_MANAGED",
+    removalPolicy: "DESTROY"
+  },
+  sns: {
+    fifo: false,
+    contentBasedDeduplication: false,
+    masterKey: null,
+    removalPolicy: "DESTROY"
+  },
+  apigateway: {
+    apiType: "HTTP",
+    stageName: "prod",
+    auth: "NONE",
+    cors: true,
+    throttlingBurstLimit: 100,
+    throttlingRateLimit: 50,
+    removalPolicy: "DESTROY"
+  },
+  alb: {
+    internetFacing: true,
+    targetType: "IP",
+    healthCheckPath: "/health",
+    listenerPort: 443,
+    listenerProtocol: "HTTPS",
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  vpc: {
+    cidr: "10.0.0.0/16",
+    maxAzs: 2,
+    natGateways: 1,
+    subnetConfiguration: [
+      { name: "Public",  subnetType: "PUBLIC",               cidrMask: 24 },
+      { name: "Private", subnetType: "PRIVATE_WITH_EGRESS",  cidrMask: 24 }
+    ],
+    removalPolicy: "DESTROY"
+  },
+  cloudfront: {
+    priceClass: "PRICE_CLASS_100",
+    defaultRootObject: "index.html",
+    httpVersion: "HTTP2",
+    certificate: null,
+    webAclId: null,
+    removalPolicy: "DESTROY"
+  },
+  external: { endpoint: "", authType: "NONE" },
+  user:     { authType: "COGNITO" },
+};
+
+// Valid edge relationship types
+const EDGE_RELATIONSHIPS = [
+  "iam-grant", "event-source-mapping", "subscription",
+  "api-integration", "origin", "trigger", "invoke",
+  "stream-consumer", "read", "write", "read-write"
+];
 
 const NODE_MIN_W = 140;
 const NODE_H = 56;
@@ -639,8 +796,15 @@ let fileName = "untitled.arch.json";
 
 function freshState() {
   return {
-    schemaVersion: "0.1.0",
-    metadata: { name: "Untitled", createdAt: new Date().toISOString() },
+    schemaVersion: "0.2.0",
+    metadata: {
+      name: "Untitled",
+      stackName: "",
+      region: "us-east-1",
+      account: "",
+      environment: "dev",
+      createdAt: new Date().toISOString()
+    },
     nodes: [],
     edges: []
   };
@@ -648,6 +812,14 @@ function freshState() {
 
 function uid(prefix) {
   return prefix + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function toPascalCase(str) {
+  return (str || "")
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
+    .split(" ").filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join("");
 }
 
 const canvas = document.getElementById("canvas");
@@ -814,36 +986,47 @@ function svg(name, attrs) {
 
 function renderInspector() {
   inspector.innerHTML = "<h3>Inspector</h3>";
+
+  // ── Nothing selected → show diagram metadata ──
   if (!selection) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "Select a node or edge to edit its properties.";
-    inspector.appendChild(empty);
+    const m = state.metadata;
+    inspector.appendChild(field("Diagram name", m.name       || "", v => { m.name       = v; renderJson(); }));
+    inspector.appendChild(field("Stack name",   m.stackName  || "", v => { m.stackName  = v; renderJson(); }));
+    inspector.appendChild(field("Region",       m.region     || "", v => { m.region     = v; renderJson(); }));
+    inspector.appendChild(field("Account ID",   m.account    || "", v => { m.account    = v; renderJson(); }));
+    inspector.appendChild(field("Environment",  m.environment|| "", v => { m.environment= v; renderJson(); }));
+    const hint = document.createElement("div");
+    hint.className = "empty";
+    hint.style.marginTop = "12px";
+    hint.textContent = "Click a node or edge to edit its CDK properties.";
+    inspector.appendChild(hint);
     return;
   }
 
+  // ── Node inspector ──
   if (selection.kind === "node") {
     const n = state.nodes.find(x => x.id === selection.id);
     if (!n) { selection = null; return renderInspector(); }
 
-    inspector.appendChild(field("ID", n.id, null, true));
-    inspector.appendChild(field("Service", SERVICE_META[n.type] ? SERVICE_META[n.type].label : n.type, null, true));
-    inspector.appendChild(field("Label", n.label || "", v => { n.label = v; render(); }));
+    inspector.appendChild(field("ID",            n.id,                                          null, true));
+    inspector.appendChild(field("Service",       SERVICE_META[n.type]?.label || n.type,         null, true));
+    inspector.appendChild(field("CDK Construct", n.cdkConstruct || "—",                         null, true));
+    inspector.appendChild(field("CDK Module",    n.cdkModule    || "—",                         null, true));
+    inspector.appendChild(field("Label",         n.label || "",    v => { n.label   = v; render(); }));
+    inspector.appendChild(field("CDK ID",        n.cdkId  || "",   v => { n.cdkId  = v; renderJson(); }));
+    inspector.appendChild(textareaField("Notes", n.notes  || "",   v => { n.notes  = v; renderJson(); }, 2));
 
+    // Props JSON
     const propsField = document.createElement("div");
     propsField.className = "field";
     const propsLbl = document.createElement("label");
-    propsLbl.textContent = "Properties (JSON)";
+    propsLbl.textContent = "CDK Props (JSON)";
     const propsTa = document.createElement("textarea");
+    propsTa.style.minHeight = "160px";
     propsTa.value = JSON.stringify(n.props || {}, null, 2);
     propsTa.addEventListener("change", () => {
-      try {
-        n.props = JSON.parse(propsTa.value);
-        render();
-      } catch (e) {
-        alert("Invalid JSON: " + e.message);
-        propsTa.value = JSON.stringify(n.props || {}, null, 2);
-      }
+      try   { n.props = JSON.parse(propsTa.value); render(); }
+      catch (e) { alert("Invalid JSON: " + e.message); propsTa.value = JSON.stringify(n.props || {}, null, 2); }
     });
     propsField.appendChild(propsLbl);
     propsField.appendChild(propsTa);
@@ -856,13 +1039,51 @@ function renderInspector() {
     inspector.appendChild(del);
   }
 
+  // ── Edge inspector ──
   if (selection.kind === "edge") {
     const e = state.edges.find(x => x.id === selection.id);
     if (!e) { selection = null; return renderInspector(); }
-    inspector.appendChild(field("ID", e.id, null, true));
-    inspector.appendChild(field("From", e.from, null, true));
-    inspector.appendChild(field("To", e.to, null, true));
+
+    const srcNode = state.nodes.find(n => n.id === e.from);
+    const dstNode = state.nodes.find(n => n.id === e.to);
+
+    inspector.appendChild(field("ID",    e.id,                                                null, true));
+    inspector.appendChild(field("From",  srcNode ? `${srcNode.label} (${e.from})` : e.from,  null, true));
+    inspector.appendChild(field("To",    dstNode ? `${dstNode.label} (${e.to})`   : e.to,    null, true));
     inspector.appendChild(field("Label", e.label || "", v => { e.label = v; render(); }));
+
+    // Relationship select
+    const relWrap = document.createElement("div"); relWrap.className = "field";
+    const relLbl  = document.createElement("label"); relLbl.textContent = "Relationship";
+    const relSel  = document.createElement("select");
+    EDGE_RELATIONSHIPS.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r; opt.textContent = r;
+      if (r === (e.relationship || "invoke")) opt.selected = true;
+      relSel.appendChild(opt);
+    });
+    relSel.addEventListener("change", () => { e.relationship = relSel.value; renderJson(); });
+    relWrap.appendChild(relLbl); relWrap.appendChild(relSel);
+    inspector.appendChild(relWrap);
+
+    inspector.appendChild(field("Protocol", e.protocol || "", v => { e.protocol = v; renderJson(); }));
+    inspector.appendChild(field("CDK Method", e.cdkMethod || "", v => { e.cdkMethod = v; renderJson(); }, false, "e.g. table.grantReadWriteData(fn)"));
+
+    // IAM Actions textarea
+    const actWrap = document.createElement("div"); actWrap.className = "field";
+    const actLbl  = document.createElement("label"); actLbl.textContent = "IAM Actions (JSON array)";
+    const actTa   = document.createElement("textarea");
+    actTa.style.minHeight = "70px";
+    actTa.value = JSON.stringify(e.iamActions || [], null, 2);
+    actTa.addEventListener("change", () => {
+      try   { e.iamActions = JSON.parse(actTa.value); renderJson(); }
+      catch (err) { alert("Invalid JSON: " + err.message); actTa.value = JSON.stringify(e.iamActions || [], null, 2); }
+    });
+    actWrap.appendChild(actLbl); actWrap.appendChild(actTa);
+    inspector.appendChild(actWrap);
+
+    inspector.appendChild(textareaField("Notes", e.notes || "", v => { e.notes = v; renderJson(); }, 2));
+
     const del = document.createElement("button");
     del.className = "danger";
     del.textContent = "Delete edge";
@@ -871,17 +1092,32 @@ function renderInspector() {
   }
 }
 
-function field(label, value, onChange, readonly) {
+function field(label, value, onChange, readonly, placeholder) {
   const wrap = document.createElement("div");
   wrap.className = "field";
   const lbl = document.createElement("label");
   lbl.textContent = label;
   const input = document.createElement("input");
   input.value = value;
+  if (placeholder) input.placeholder = placeholder;
   if (readonly) input.disabled = true;
   if (onChange) input.addEventListener("change", e => onChange(e.target.value));
   wrap.appendChild(lbl);
   wrap.appendChild(input);
+  return wrap;
+}
+
+function textareaField(label, value, onChange, rows) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const lbl = document.createElement("label");
+  lbl.textContent = label;
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.rows = rows || 3;
+  if (onChange) ta.addEventListener("change", e => onChange(e.target.value));
+  wrap.appendChild(lbl);
+  wrap.appendChild(ta);
   return wrap;
 }
 
@@ -901,14 +1137,18 @@ function syntaxHighlight(json) {
 }
 
 function addNode(type, x, y) {
-  const meta = SERVICE_META[type];
+  const meta    = SERVICE_META[type] || { label: type };
+  const cdkMeta = CDK_META[type]    || { construct: null, module: null };
+  const label   = meta.label;
   const n = {
-    id: uid("n"),
-    type,
-    label: meta ? meta.label : type,
+    id: uid("n"), type, label,
+    cdkConstruct: cdkMeta.construct,
+    cdkModule:    cdkMeta.module,
+    cdkId:        toPascalCase(label),
+    notes:        "",
     x: Math.round(x / 10) * 10,
     y: Math.round(y / 10) * 10,
-    props: meta && meta.defaults ? Object.assign({}, meta.defaults) : {}
+    props: { ...(NODE_CDK_DEFAULTS[type] || {}) }
   };
   state.nodes.push(n);
   selection = { kind: "node", id: n.id };
@@ -1269,29 +1509,50 @@ function appendMsg(role, text) {
 const CLAUDE_TOOLS = [
   {
     name: "add_node",
-    description: "Add an AWS service node to the diagram. Returns the node id for use with add_edge.",
+    description: "Add an AWS service node. Populate cdkId, props, and notes fully — the props object must contain ALL fields listed in the CDK defaults for that service type so a downstream CDK agent needs zero guesswork.",
     input_schema: {
       type: "object",
       properties: {
         type:  { type: "string", description: "One of: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user" },
-        label: { type: "string", description: "Display name for this node" },
+        label: { type: "string", description: "Human-readable display name, e.g. 'User Auth Function'" },
+        cdkId: { type: "string", description: "PascalCase CDK construct ID, e.g. 'UserAuthFunction'. Must be unique in the stack." },
+        props: {
+          type: "object",
+          description: "Complete CDK deployment props. Always include ALL fields for the service type — use recommended defaults for anything not specified by the user. Key fields by type: lambda→{runtime,handler,code,memorySize,timeout,environment,tracing,removalPolicy}; dynamodb→{partitionKey,sortKey,billingMode,stream,pointInTimeRecovery,encryption,gsi,removalPolicy}; s3→{versioned,blockPublicAccess,encryption,removalPolicy,autoDeleteObjects}; sqs→{fifo,visibilityTimeout,messageRetentionPeriod,dlqRef,maxReceiveCount,encryption,removalPolicy}; rds→{engine,engineVersion,instanceClass,instanceSize,databaseName,multiAz,storageEncrypted,deletionProtection,vpcRef,removalPolicy}."
+        },
+        notes: { type: "string", description: "One or two sentences describing this resource's role in the architecture and any non-obvious configuration decisions." },
         x:     { type: "number", description: "Canvas x position (auto-placed if omitted)" },
         y:     { type: "number", description: "Canvas y position (auto-placed if omitted)" }
       },
-      required: ["type"]
+      required: ["type", "label", "cdkId"]
     }
   },
   {
     name: "add_edge",
-    description: "Connect two nodes with a directed arrow.",
+    description: "Connect two nodes. Always specify relationship, iamActions, cdkMethod, and protocol so a CDK agent can generate correct IAM grants and integrations without guessing.",
     input_schema: {
       type: "object",
       properties: {
-        from_id: { type: "string", description: "Source node id" },
-        to_id:   { type: "string", description: "Destination node id" },
-        label:   { type: "string", description: "Optional edge label, e.g. 'invokes'" }
+        from_id:      { type: "string", description: "Source node id" },
+        to_id:        { type: "string", description: "Destination node id" },
+        label:        { type: "string", description: "Short display label shown on the diagram arrow, e.g. 'reads/writes'" },
+        relationship: {
+          type: "string",
+          enum: ["iam-grant","event-source-mapping","subscription","api-integration","origin","trigger","invoke","stream-consumer","read","write","read-write"],
+          description: "The AWS relationship type this arrow represents."
+        },
+        iamActions: {
+          type: "array", items: { type: "string" },
+          description: "Explicit IAM action strings needed for this connection, e.g. ['dynamodb:GetItem','dynamodb:PutItem','dynamodb:Query']. Empty array for non-IAM relationships."
+        },
+        cdkMethod: {
+          type: "string",
+          description: "The exact CDK L2 method call that wires this relationship, e.g. 'table.grantReadWriteData(fn)', 'fn.addEventSource(new SqsEventSource(queue,{batchSize:10}))', 'topic.addSubscription(new SqsSubscription(queue))'."
+        },
+        protocol: { type: "string", description: "Communication mechanism, e.g. 'AWS SDK v3', 'HTTPS', 'EventBridge rule', 'SQS trigger'." },
+        notes:    { type: "string", description: "Any non-obvious wiring details, ordering constraints, or permission boundaries relevant for CDK generation." }
       },
-      required: ["from_id", "to_id"]
+      required: ["from_id", "to_id", "relationship"]
     }
   },
   {
@@ -1301,21 +1562,25 @@ const CLAUDE_TOOLS = [
   },
   {
     name: "set_metadata",
-    description: "Set the diagram title.",
+    description: "Set diagram-level deployment metadata used by the CDK agent to initialise the Stack.",
     input_schema: {
       type: "object",
-      properties: { name: { type: "string" } },
+      properties: {
+        name:        { type: "string", description: "Human-readable diagram/architecture name" },
+        stackName:   { type: "string", description: "CloudFormation stack name, e.g. 'MyAppStack'" },
+        region:      { type: "string", description: "AWS region, e.g. 'us-east-1'" },
+        account:     { type: "string", description: "AWS account ID (12 digits). Use empty string if unknown." },
+        environment: { type: "string", description: "'dev', 'staging', or 'prod' — affects removalPolicy defaults" }
+      },
       required: ["name"]
     }
   },
   {
     name: "remove_object",
-    description: "Remove a node (and its connected edges) or a single edge by id. Prefer this over clear_diagram when only removing specific elements.",
+    description: "Remove a node (and its connected edges) or a single edge by id.",
     input_schema: {
       type: "object",
-      properties: {
-        id: { type: "string", description: "The id of the node or edge to remove" }
-      },
+      properties: { id: { type: "string", description: "The id of the node or edge to remove" } },
       required: ["id"]
     }
   }
@@ -1342,15 +1607,21 @@ function autoPlace() {
 function executeTool(name, input) {
   switch (name) {
     case "add_node": {
-      const pos = (input.x != null && input.y != null) ? input : autoPlace();
-      const type = input.type in SERVICE_META ? input.type : "external";
-      const meta = SERVICE_META[type];
+      const pos     = (input.x != null && input.y != null) ? input : autoPlace();
+      const type    = input.type in SERVICE_META ? input.type : "external";
+      const meta    = SERVICE_META[type] || { label: type };
+      const cdkMeta = CDK_META[type]    || { construct: null, module: null };
+      const label   = input.label || meta.label;
       const n = {
-        id: uid("n"), type,
-        label: input.label || (meta ? meta.label : type),
+        id: uid("n"), type, label,
+        cdkConstruct: cdkMeta.construct,
+        cdkModule:    cdkMeta.module,
+        cdkId:        input.cdkId || toPascalCase(label),
+        notes:        input.notes || "",
         x: Math.round(pos.x / 10) * 10,
         y: Math.round(pos.y / 10) * 10,
-        props: meta?.defaults ? { ...meta.defaults } : {}
+        // merge defaults → agent-supplied props (agent values win)
+        props: { ...(NODE_CDK_DEFAULTS[type] || {}), ...(input.props || {}) }
       };
       state.nodes.push(n);
       render();
@@ -1362,7 +1633,15 @@ function executeTool(name, input) {
       if (!src) return { error: `Node ${input.from_id} not found` };
       if (!dst) return { error: `Node ${input.to_id} not found` };
       if (src.id === dst.id) return { error: "Cannot connect a node to itself" };
-      const e = { id: uid("e"), from: src.id, to: dst.id, label: input.label || "" };
+      const e = {
+        id: uid("e"), from: src.id, to: dst.id,
+        label:        input.label        || "",
+        relationship: input.relationship || "invoke",
+        iamActions:   input.iamActions   || [],
+        cdkMethod:    input.cdkMethod    || "",
+        protocol:     input.protocol     || "",
+        notes:        input.notes        || ""
+      };
       state.edges.push(e);
       render();
       return { id: e.id };
@@ -1371,7 +1650,12 @@ function executeTool(name, input) {
       state = freshState(); selection = null; render();
       return { ok: true };
     case "set_metadata":
-      state.metadata.name = input.name; renderJson();
+      if (input.name)        state.metadata.name        = input.name;
+      if (input.stackName)   state.metadata.stackName   = input.stackName;
+      if (input.region)      state.metadata.region      = input.region;
+      if (input.account)     state.metadata.account     = input.account;
+      if (input.environment) state.metadata.environment = input.environment;
+      renderJson();
       return { ok: true };
     case "remove_object": {
       const nodeIdx = state.nodes.findIndex(n => n.id === input.id);
@@ -1541,12 +1825,31 @@ async function runAgentLoop(apiKey) {
 
 function buildSystemPrompt() {
   const includeDiagram = document.getElementById("chatIncludeDiagram").checked;
-  let prompt = `You are an expert AWS solutions architect embedded in a diagram editor.
-Use the provided tools to build and modify the diagram directly — don't just describe changes.
-Before building a new architecture from scratch, call clear_diagram first, then set_metadata with a meaningful name.
-Layout guide: vary BOTH x and y — never place all nodes in a single row or column. Use a 2D layout: left-to-right for data flow, top-to-bottom for tiers (y ~160 apart). Node boxes are 150–300px wide depending on their label. When placing nodes in the same row, use x spacing of at least 320px between consecutive x values so that edge labels (which appear in the gap between boxes) are never hidden behind a box. Example: user at (60,200), apigateway at (380,200), lambda at (700,200), dynamodb at (1020,200), s3 at (700,400). Always prefer too much space over too little — the layout will not auto-compress.
-To remove a specific node or edge use remove_object(id) — only use clear_diagram to wipe everything.
-Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user.`;
+  let prompt = `You are an expert AWS solutions architect embedded in a diagram editor. Your output is consumed by a downstream CDK code-generation agent — every node and edge must be filled in completely so that agent needs zero guesswork.
+
+NODES — always call add_node with:
+• cdkId: PascalCase unique ID (e.g. "UserAuthFunction", "OrdersTable")
+• props: full CDK props object — include ALL fields for the service type, not just the ones the user mentioned. Fill unspecified fields with AWS recommended defaults. Key rules:
+  - lambda: set runtime (NODEJS_20_X/PYTHON_3_12/etc), handler, code path, memorySize, timeout, environment map, tracing "Active", removalPolicy
+  - dynamodb: set partitionKey {name,type}, sortKey if needed, billingMode, stream, pointInTimeRecovery true, encryption, removalPolicy "RETAIN" for prod / "DESTROY" for dev
+  - s3: set versioned, blockPublicAccess "BLOCK_ALL", encryption, removalPolicy, autoDeleteObjects
+  - sqs: set fifo, visibilityTimeout (match Lambda timeout if event source), messageRetentionPeriod, maxReceiveCount, dlqRef if applicable, encryption
+  - rds: set engine, engineVersion, instanceClass, instanceSize, databaseName, multiAz, storageEncrypted true, deletionProtection, removalPolicy "SNAPSHOT"
+  - All stateful resources (rds, dynamodb, s3, elasticache): default removalPolicy to "RETAIN" unless user says dev/demo
+• notes: 1–2 sentences explaining the resource's role and any non-obvious decisions
+
+EDGES — always call add_edge with:
+• relationship: one of [iam-grant, event-source-mapping, subscription, api-integration, origin, trigger, invoke, stream-consumer, read, write, read-write]
+• iamActions: explicit IAM action strings (e.g. ["dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query"]). Use [] only for non-IAM relationships.
+• cdkMethod: the exact CDK L2 call (e.g. "table.grantReadWriteData(fn)", "fn.addEventSource(new SqsEventSource(queue,{batchSize:10}))", "topic.addSubscription(new SqsSubscription(queue))")
+• protocol: how they communicate (AWS SDK v3 / HTTPS / EventBridge rule / SQS trigger / etc.)
+• notes: any wiring constraints or ordering dependencies
+
+METADATA — call set_metadata first with name, stackName, region, environment (dev/staging/prod).
+
+LAYOUT — left-to-right for data flow, top-to-bottom for tiers. Use x spacing ≥ 320px between same-row nodes. Always prefer too much space — a layout pass will not compress it.
+Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user.
+To remove a specific node or edge use remove_object(id). Only use clear_diagram to wipe everything.`;
 
   if (includeDiagram) {
     if (state.nodes.length > 0) {
