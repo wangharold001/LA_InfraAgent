@@ -1,154 +1,231 @@
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import readline from "readline/promises";
 import fs from "fs";
 import path from "path";
+import { getRecentStackFailureEvents, tail } from "./cdk-tools.js";
+
+export { getRecentStackFailureEvents };
+
+// =============================================================================
+// Internal helpers
+// =============================================================================
 
 /**
- * Deploy the CDK stack
- * @param {string} cdkDir - Directory containing the CDK project
- * @param {object} metadata - Stack metadata (region, account, etc.)
- * @returns {Promise<boolean>} - true if deployment succeeded
+ * Spawn a process and stream its stdout/stderr to the parent terminal AND
+ * capture them into strings. Optionally tee to a transcript file.
  */
-export async function deployCDK(cdkDir, metadata) {
+function spawnAndTee(cmd, args, opts = {}, transcriptStream = null) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      stdio: ["inherit", "pipe", "pipe"],
+      ...opts,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      const s = d.toString();
+      stdout += s;
+      process.stdout.write(s);
+      if (transcriptStream) transcriptStream.write(s);
+    });
+    child.stderr.on("data", (d) => {
+      const s = d.toString();
+      stderr += s;
+      process.stderr.write(s);
+      if (transcriptStream) transcriptStream.write(s);
+    });
+    child.on("error", (e) =>
+      resolve({ exitCode: -1, error: e.message, stdout, stderr })
+    );
+    child.on("close", (code, signal) =>
+      resolve({ exitCode: code, signal, stdout, stderr })
+    );
+  });
+}
+
+function preflight() {
+  try {
+    const cdkVersion = execSync("cdk --version", { encoding: "utf8" }).trim();
+    console.log(`   ✓ Found: ${cdkVersion}`);
+  } catch {
+    return { ok: false, phase: "preflight", error: "AWS CDK CLI not installed (npm install -g aws-cdk)" };
+  }
+  try {
+    const identity = execSync("aws sts get-caller-identity", { encoding: "utf8" });
+    const j = JSON.parse(identity);
+    console.log(`   ✓ Authenticated as: ${j.Arn}`);
+    console.log(`   Account: ${j.Account}`);
+  } catch {
+    return { ok: false, phase: "preflight", error: "AWS credentials not configured (run `aws configure`)" };
+  }
+  return { ok: true };
+}
+
+function openTranscript(cdkDir) {
+  const dir = path.join(cdkDir, ".infra-agent");
+  fs.mkdirSync(dir, { recursive: true });
+  const transcriptPath = path.join(dir, `deploy-${Date.now()}.log`);
+  const stream = fs.createWriteStream(transcriptPath, { flags: "a" });
+  stream.write(`# infra-agent deploy transcript\n# started: ${new Date().toISOString()}\n\n`);
+  return { stream, transcriptPath };
+}
+
+// =============================================================================
+// runDeploy — non-interactive, structured-result pipeline used by the
+// orchestrator (including the auto-repair loop).
+// =============================================================================
+
+/**
+ * Run install → build → synth → (optional bootstrap) → diff → deploy.
+ *
+ * Always non-interactive. The caller (pipeline) is responsible for any user
+ * prompts (deploy y/n, bootstrap y/n).
+ *
+ * @param {string} cdkDir
+ * @param {object} metadata
+ * @param {{bootstrap?: boolean, skipDiff?: boolean}} [opts]
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   phase: string,
+ *   command?: string,
+ *   exitCode?: number,
+ *   stdout?: string,
+ *   stderr?: string,
+ *   transcriptPath?: string,
+ *   error?: string,
+ *   outputs?: object,
+ * }>}
+ */
+export async function runDeploy(cdkDir, metadata, opts = {}) {
+  const { bootstrap = false, skipDiff = false } = opts;
+
   console.log("\n" + "=".repeat(80));
   console.log("🚀 CDK DEPLOYMENT");
   console.log("=".repeat(80));
 
+  console.log("\n🔍 Checking CDK CLI and AWS credentials...");
+  const pre = preflight();
+  if (!pre.ok) {
+    console.error(`\n❌ ${pre.error}`);
+    return pre;
+  }
+
+  const { stream: transcript, transcriptPath } = openTranscript(cdkDir);
+  const env = { ...process.env };
+
+  const steps = [
+    { phase: "install", label: "📦 Installing dependencies...",       cmd: "npm",  args: ["install"] },
+    { phase: "build",   label: "🔨 Building TypeScript...",            cmd: "npm",  args: ["run", "build"] },
+    { phase: "synth",   label: "🔍 Synthesizing CloudFormation...",    cmd: "npx",  args: ["cdk", "synth"] },
+  ];
+
+  if (bootstrap) {
+    const bootstrapArgs = metadata && metadata.region
+      ? ["cdk", "bootstrap", `aws://unknown-account/${metadata.region}`]
+      : ["cdk", "bootstrap"];
+    steps.push({ phase: "bootstrap", label: "🔧 Bootstrapping CDK environment...", cmd: "npx", args: bootstrapArgs });
+  }
+
+  if (!skipDiff) {
+    steps.push({
+      phase: "diff",
+      label: "📋 Generating deployment diff...",
+      cmd: "npx",
+      args: ["cdk", "diff"],
+      // cdk diff returns 1 when there are differences, which is normal.
+      successExitCodes: [0, 1],
+    });
+  }
+
+  steps.push({
+    phase: "deploy",
+    label: "🚀 Deploying stack to AWS (this may take several minutes)...",
+    cmd: "npx",
+    args: ["cdk", "deploy", "--require-approval", "never"],
+  });
+
+  for (const step of steps) {
+    console.log(`\n${step.label}`);
+    transcript.write(`\n\n## ${step.phase}: ${step.cmd} ${step.args.join(" ")}\n\n`);
+    const res = await spawnAndTee(step.cmd, step.args, { cwd: cdkDir, env }, transcript);
+    const successCodes = step.successExitCodes || [0];
+    if (!successCodes.includes(res.exitCode)) {
+      transcript.end();
+      return {
+        ok: false,
+        phase: step.phase,
+        command: `${step.cmd} ${step.args.join(" ")}`,
+        exitCode: res.exitCode,
+        stdout: res.stdout,
+        stderr: res.stderr,
+        transcriptPath,
+        error: res.error,
+      };
+    }
+    console.log(`   ✓ ${step.phase} completed`);
+  }
+
+  console.log("\n✅ Deployment completed successfully!");
+
+  // Best-effort outputs fetch
+  let outputs;
   try {
-    // Check if CDK CLI is installed
-    console.log("\n🔍 Checking CDK CLI...");
-    try {
-      const cdkVersion = execSync("cdk --version", { encoding: "utf8" }).trim();
-      console.log(`   ✓ Found: ${cdkVersion}`);
-    } catch (error) {
-      console.error("\n❌ AWS CDK CLI is not installed!");
-      console.error("\nInstall it with:");
-      console.error("   npm install -g aws-cdk");
-      return false;
-    }
+    const json = execSync("npx cdk outputs --json", { cwd: cdkDir, encoding: "utf8" });
+    outputs = JSON.parse(json);
+    console.log("\n📤 Stack Outputs:");
+    console.log(JSON.stringify(outputs, null, 2));
+  } catch {
+    console.log("\n📤 (No outputs defined)");
+  }
 
-    // Check AWS credentials
-    console.log("\n🔍 Checking AWS credentials...");
-    try {
-      const identity = execSync("aws sts get-caller-identity", { encoding: "utf8" });
-      const identityJson = JSON.parse(identity);
-      console.log(`   ✓ Authenticated as: ${identityJson.Arn}`);
-      console.log(`   Account: ${identityJson.Account}`);
-    } catch (error) {
-      console.error("\n❌ AWS credentials not configured!");
-      console.error("\nConfigure them with:");
-      console.error("   aws configure");
-      return false;
-    }
+  transcript.write(`\n\n# completed: ${new Date().toISOString()}\n`);
+  transcript.end();
 
-    // Install dependencies
-    console.log("\n📦 Installing dependencies...");
-    execSync("npm install", {
-      cwd: cdkDir,
-      stdio: "inherit",
-    });
-    console.log("   ✓ Dependencies installed");
+  return { ok: true, phase: "complete", transcriptPath, outputs };
+}
 
-    // Build TypeScript
-    console.log("\n🔨 Building TypeScript...");
-    execSync("npm run build", {
-      cwd: cdkDir,
-      stdio: "inherit",
-    });
-    console.log("   ✓ Build completed");
+// =============================================================================
+// deployCDK — backwards-compatible interactive wrapper around runDeploy.
+// =============================================================================
 
-    // CDK synth (validate the stack)
-    console.log("\n🔍 Synthesizing CloudFormation...");
-    execSync("npx cdk synth", {
-      cwd: cdkDir,
-      stdio: "inherit",
-    });
-    console.log("   ✓ Synthesis successful");
-
-    // Ask for bootstrap confirmation
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    const shouldBootstrap = await rl.question(
+/**
+ * Interactive deploy used by callers that want the legacy boolean flow.
+ * The new pipeline calls runDeploy directly.
+ */
+export async function deployCDK(cdkDir, metadata) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const ans = await rl.question(
       "\n🔧 Bootstrap CDK environment (required for first deployment)? (yes/no): "
     );
+    const bootstrap = /^y(es)?$/i.test(ans.trim());
 
-    if (shouldBootstrap.trim().toLowerCase() === "yes" || shouldBootstrap.trim().toLowerCase() === "y") {
-      console.log("\n🔧 Bootstrapping CDK environment...");
-      const bootstrapCmd = metadata.region
-        ? `npx cdk bootstrap aws://unknown-account/${metadata.region}`
-        : "npx cdk bootstrap";
-
-      execSync(bootstrapCmd, {
-        cwd: cdkDir,
-        stdio: "inherit",
-      });
-      console.log("   ✓ Bootstrap completed");
-    }
-
-    // Show what will be deployed
-    console.log("\n📋 Generating deployment diff...");
-    try {
-      execSync("npx cdk diff", {
-        cwd: cdkDir,
-        stdio: "inherit",
-      });
-    } catch (error) {
-      // diff returns non-zero if there are changes, which is expected
-      if (error.status !== 0 && error.status !== 1) {
-        throw error;
-      }
-    }
-
-    // Final deployment confirmation
-    const shouldDeploy = await rl.question(
-      "\n🚀 Deploy this stack to AWS? (yes/no): "
-    );
-    rl.close();
-
-    if (shouldDeploy.trim().toLowerCase() !== "yes" && shouldDeploy.trim().toLowerCase() !== "y") {
+    const goAns = await rl.question("\n🚀 Deploy this stack to AWS? (yes/no): ");
+    if (!/^y(es)?$/i.test(goAns.trim())) {
       console.log("\n⏸️  Deployment cancelled by user");
       return false;
     }
+    rl.close();
 
-    // Deploy!
-    console.log("\n🚀 Deploying stack to AWS...");
-    console.log("   This may take several minutes...\n");
-
-    execSync("npx cdk deploy --require-approval never", {
-      cwd: cdkDir,
-      stdio: "inherit",
-    });
-
-    console.log("\n✅ Deployment completed successfully!");
-
-    // Show outputs
-    console.log("\n📤 Fetching stack outputs...");
-    try {
-      const outputs = execSync("npx cdk outputs --json", {
-        cwd: cdkDir,
-        encoding: "utf8",
-      });
-      const outputsJson = JSON.parse(outputs);
-      console.log("\nStack Outputs:");
-      console.log(JSON.stringify(outputsJson, null, 2));
-    } catch (error) {
-      console.log("   (No outputs defined)");
+    const result = await runDeploy(cdkDir, metadata, { bootstrap });
+    if (!result.ok) {
+      console.error(`\n❌ Deployment failed at phase: ${result.phase}`);
+      if (result.error) console.error(result.error);
+      return false;
     }
-
     return true;
-  } catch (error) {
+  } catch (e) {
+    rl.close();
     console.error("\n❌ Deployment failed!");
-    console.error(error.message);
+    console.error(e.message);
     return false;
   }
 }
 
-/**
- * Generate a README with deployment instructions
- */
+// =============================================================================
+// generateReadme (unchanged)
+// =============================================================================
+
 export function generateReadme(cdkDir, metadata) {
   const readmePath = path.join(cdkDir, "README.md");
 
@@ -225,3 +302,5 @@ Generated by [InfraAgent](https://github.com/yourusername/infra-agent)
   fs.writeFileSync(readmePath, content, "utf8");
   return readmePath;
 }
+
+export { tail };
