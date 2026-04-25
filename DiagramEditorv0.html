@@ -132,14 +132,11 @@
     cursor: pointer;
   }
   .edge-label {
-    font: 11px var(--font);
-    fill: var(--muted);
+    font: 12px var(--font);
+    fill: var(--ink);
     text-anchor: middle;
+    dominant-baseline: middle;
     pointer-events: none;
-    paint-order: stroke;
-    stroke: var(--surface);
-    stroke-width: 4;
-    stroke-linejoin: round;
   }
   .edge-preview {
     fill: none;
@@ -538,6 +535,7 @@
       <g id="viewport">
         <g id="edges"></g>
         <g id="nodes"></g>
+        <g id="edgeLabels"></g>
         <path id="edgePreview" class="edge-preview" style="display:none"></path>
       </g>
     </svg>
@@ -611,8 +609,28 @@ const SERVICE_META = {
   user:        { label: "User",        color: "#6b6b64", defaults: {} },
 };
 
-const NODE_W = 140;
+const NODE_MIN_W = 140;
 const NODE_H = 56;
+
+const _textMeasureCanvas = document.createElement("canvas");
+const _textMeasureCtx = _textMeasureCanvas.getContext("2d");
+
+function nodeWidth(n) {
+  const meta = SERVICE_META[n.type] || { label: n.type };
+  const label = n.label || meta.label;
+  const sub = meta.label.toLowerCase();
+  _textMeasureCtx.font = "500 13px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  const titleW = _textMeasureCtx.measureText(label).width;
+  _textMeasureCtx.font = "11px ui-monospace, 'SF Mono', Consolas, monospace";
+  const subW = _textMeasureCtx.measureText(sub).width;
+  const needed = 40 + Math.max(titleW, subW) + 16;
+  return Math.max(NODE_MIN_W, Math.ceil(needed / 10) * 10);
+}
+
+function measureEdgeLabelWidth(text) {
+  _textMeasureCtx.font = "12px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  return _textMeasureCtx.measureText(text).width;
+}
 
 let state = freshState();
 let selection = null;
@@ -635,6 +653,7 @@ function uid(prefix) {
 const canvas = document.getElementById("canvas");
 const nodesLayer = document.getElementById("nodes");
 const edgesLayer = document.getElementById("edges");
+const edgeLabelsLayer = document.getElementById("edgeLabels");
 const viewportG = document.getElementById("viewport");
 const edgePreview = document.getElementById("edgePreview");
 const inspector = document.getElementById("inspector");
@@ -644,6 +663,8 @@ const fileNameEl = document.getElementById("fileName");
 
 function render() {
   edgesLayer.innerHTML = "";
+  edgeLabelsLayer.innerHTML = "";
+
   for (const e of state.edges) {
     const src = state.nodes.find(n => n.id === e.from);
     const dst = state.nodes.find(n => n.id === e.to);
@@ -661,12 +682,6 @@ function render() {
     visible.dataset.edgeId = e.id;
     g.appendChild(hit);
     g.appendChild(visible);
-    if (e.label) {
-      const mid = pathMidpoint(src, dst);
-      const text = svg("text", { class: "edge-label", x: mid.x, y: mid.y });
-      text.textContent = e.label;
-      g.appendChild(text);
-    }
     g.addEventListener("dblclick", ev => {
       ev.stopPropagation();
       const mid = pathMidpoint(src, dst);
@@ -680,6 +695,28 @@ function render() {
     nodesLayer.appendChild(renderNode(n));
   }
 
+  // Render edge labels last so they always appear above nodes
+  for (const e of state.edges) {
+    if (!e.label) continue;
+    const src = state.nodes.find(n => n.id === e.from);
+    const dst = state.nodes.find(n => n.id === e.to);
+    if (!src || !dst) continue;
+    const mid = pathMidpoint(src, dst);
+    const lw = measureEdgeLabelWidth(e.label);
+    const padX = 7, rh = 18;
+    const rw = lw + padX * 2;
+    const lg = svg("g");
+    lg.appendChild(svg("rect", {
+      x: mid.x - rw / 2, y: mid.y - rh / 2,
+      width: rw, height: rh, rx: 3,
+      fill: "white", stroke: "#d9d7ce", "stroke-width": "1"
+    }));
+    const text = svg("text", { class: "edge-label", x: mid.x, y: mid.y });
+    text.textContent = e.label;
+    lg.appendChild(text);
+    edgeLabelsLayer.appendChild(lg);
+  }
+
   viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
   renderInspector();
   renderJson();
@@ -688,13 +725,14 @@ function render() {
 function renderNode(n) {
   const meta = SERVICE_META[n.type] || { label: n.type, color: "#888" };
   const isSel = selection && selection.kind === "node" && selection.id === n.id;
+  const nw = nodeWidth(n);
   const g = svg("g", {
     class: "node-group" + (isSel ? " selected" : ""),
     transform: `translate(${n.x} ${n.y})`
   });
   g.dataset.nodeId = n.id;
 
-  g.appendChild(svg("rect", { class: "node-rect", x: 0, y: 0, width: NODE_W, height: NODE_H, rx: 4 }));
+  g.appendChild(svg("rect", { class: "node-rect", x: 0, y: 0, width: nw, height: NODE_H, rx: 4 }));
   g.appendChild(svg("use", { href: "#icon-" + n.type, x: 8, y: (NODE_H - 24) / 2, width: 24, height: 24, "pointer-events": "none" }));
 
   const title = svg("text", { class: "node-title", x: 40, y: NODE_H / 2 - 4 });
@@ -705,7 +743,7 @@ function renderNode(n) {
   sub.textContent = meta.label.toLowerCase();
   g.appendChild(sub);
 
-  const port = svg("circle", { class: "node-port", cx: NODE_W, cy: NODE_H / 2, r: 5 });
+  const port = svg("circle", { class: "node-port", cx: nw, cy: NODE_H / 2, r: 5 });
   port.dataset.nodeId = n.id;
   port.dataset.role = "port";
   g.appendChild(port);
@@ -719,13 +757,14 @@ function renderNode(n) {
 }
 
 function getBestPorts(src, dst) {
-  const srcCx = src.x + NODE_W / 2, srcCy = src.y + NODE_H / 2;
-  const dstCx = dst.x + NODE_W / 2, dstCy = dst.y + NODE_H / 2;
+  const srcW = nodeWidth(src), dstW = nodeWidth(dst);
+  const srcCx = src.x + srcW / 2, srcCy = src.y + NODE_H / 2;
+  const dstCx = dst.x + dstW / 2, dstCy = dst.y + NODE_H / 2;
   const dx = dstCx - srcCx, dy = dstCy - srcCy;
   if (Math.abs(dx) >= Math.abs(dy)) {
     return dx >= 0
-      ? { sx: src.x + NODE_W, sy: srcCy, tx: dst.x,          ty: dstCy, horiz: true,  dir: 1  }
-      : { sx: src.x,          sy: srcCy, tx: dst.x + NODE_W, ty: dstCy, horiz: true,  dir: -1 };
+      ? { sx: src.x + srcW, sy: srcCy, tx: dst.x,         ty: dstCy, horiz: true,  dir: 1  }
+      : { sx: src.x,        sy: srcCy, tx: dst.x + dstW,  ty: dstCy, horiz: true,  dir: -1 };
   } else {
     return dy >= 0
       ? { sx: srcCx, sy: src.y + NODE_H, tx: dstCx, ty: dst.y,          horiz: false, dir: 1  }
@@ -986,10 +1025,11 @@ window.addEventListener("mouseup", e => {
 });
 
 function startNodeEdit(n) {
+  const nw = nodeWidth(n);
   const rect = canvas.getBoundingClientRect();
   const sx = rect.left + viewport.x + (n.x + 40) * viewport.z;
   const sy = rect.top  + viewport.y + (n.y + NODE_H / 2 - 13) * viewport.z;
-  const sw = (NODE_W - 48) * viewport.z;
+  const sw = (nw - 48) * viewport.z;
 
   const inp = document.createElement("input");
   inp.type = "text";
@@ -1068,7 +1108,7 @@ function startEdgeEdit(e, worldX, worldY) {
 }
 
 function updateEdgePreview(fromNode, worldPt) {
-  const x1 = fromNode.x + NODE_W, y1 = fromNode.y + NODE_H / 2;
+  const x1 = fromNode.x + nodeWidth(fromNode), y1 = fromNode.y + NODE_H / 2;
   const x2 = worldPt.x, y2 = worldPt.y;
   const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
   edgePreview.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
@@ -1374,6 +1414,82 @@ async function sendChat() {
   chatSend.disabled = false; chatInput.focus();
 }
 
+// After the AI finishes a turn, push same-row nodes apart so edge labels fit in the gap.
+function autoSpaceNodes() {
+  if (state.nodes.length < 2) return;
+
+  const ROW_THRESH = 40;   // px: nodes within this y-distance share a row
+  const COL_THRESH = 60;   // px: nodes within this x-distance share a column
+  const MIN_H_GAP  = 60;   // minimum blank horizontal space between two boxes
+  const MIN_V_GAP  = 50;   // minimum blank vertical space between two boxes
+
+  let changed = false;
+
+  // helper: find any direct edge between two nodes
+  const edgeBetween = (a, b) =>
+    state.edges.find(e =>
+      (e.from === a.id && e.to === b.id) ||
+      (e.from === b.id && e.to === a.id)
+    );
+
+  // ── Horizontal pass: space out nodes that share a row ──
+  const rows = [];
+  for (const n of [...state.nodes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const row = rows.find(r => Math.abs(r[0].y - n.y) <= ROW_THRESH);
+    if (row) row.push(n);
+    else rows.push([n]);
+  }
+  for (const row of rows) {
+    row.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < row.length; i++) {
+      const prev = row[i - 1];
+      const curr = row[i];
+      const prevW = nodeWidth(prev);
+      const edge = edgeBetween(prev, curr);
+      let gap = MIN_H_GAP;
+      if (edge && edge.label) {
+        gap = Math.max(MIN_H_GAP, measureEdgeLabelWidth(edge.label) + 48);
+      }
+      const minX = prev.x + prevW + gap;
+      if (curr.x < minX) {
+        const shift = minX - curr.x;
+        for (let j = i; j < row.length; j++) {
+          row[j].x = Math.round((row[j].x + shift) / 10) * 10;
+        }
+        changed = true;
+      }
+    }
+  }
+
+  // ── Vertical pass: space out nodes that share a column ──
+  const cols = [];
+  for (const n of [...state.nodes].sort((a, b) => a.x - b.x || a.y - b.y)) {
+    const col = cols.find(c => Math.abs(c[0].x - n.x) <= COL_THRESH);
+    if (col) col.push(n);
+    else cols.push([n]);
+  }
+  for (const col of cols) {
+    col.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < col.length; i++) {
+      const prev = col[i - 1];
+      const curr = col[i];
+      const edge = edgeBetween(prev, curr);
+      let gap = MIN_V_GAP;
+      if (edge && edge.label) gap = Math.max(MIN_V_GAP, 40);
+      const minY = prev.y + NODE_H + gap;
+      if (curr.y < minY) {
+        const shift = minY - curr.y;
+        for (let j = i; j < col.length; j++) {
+          col[j].y = Math.round((col[j].y + shift) / 10) * 10;
+        }
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) render();
+}
+
 async function runAgentLoop(apiKey) {
   while (true) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1409,7 +1525,7 @@ async function runAgentLoop(apiKey) {
 
     chatHistory.push({ role: "assistant", content });
 
-    if (data.stop_reason !== "tool_use") break;
+    if (data.stop_reason !== "tool_use") { autoSpaceNodes(); break; }
 
     const toolResults = [];
     for (const block of content.filter(b => b.type === "tool_use")) {
@@ -1428,7 +1544,7 @@ function buildSystemPrompt() {
   let prompt = `You are an expert AWS solutions architect embedded in a diagram editor.
 Use the provided tools to build and modify the diagram directly — don't just describe changes.
 Before building a new architecture from scratch, call clear_diagram first, then set_metadata with a meaningful name.
-Layout guide: vary BOTH x and y — never place all nodes in a single row or column. Use a 2D layout: left-to-right for data flow (x ~180 apart), top-to-bottom for tiers (y ~160 apart). Example: API Gateway at (80,200), Lambda at (300,200), DynamoDB at (520,200), S3 at (300,400). To prevent overlapping, ensure at least 200px distance in a single direction between any two nodes. 
+Layout guide: vary BOTH x and y — never place all nodes in a single row or column. Use a 2D layout: left-to-right for data flow, top-to-bottom for tiers (y ~160 apart). Node boxes are 150–300px wide depending on their label. When placing nodes in the same row, use x spacing of at least 320px between consecutive x values so that edge labels (which appear in the gap between boxes) are never hidden behind a box. Example: user at (60,200), apigateway at (380,200), lambda at (700,200), dynamodb at (1020,200), s3 at (700,400). Always prefer too much space over too little — the layout will not auto-compress.
 To remove a specific node or edge use remove_object(id) — only use clear_diagram to wipe everything.
 Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user.`;
 
