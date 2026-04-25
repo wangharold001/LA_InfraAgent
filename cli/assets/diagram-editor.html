@@ -1209,17 +1209,19 @@ let drag = null;
 document.querySelectorAll(".palette-item").forEach(item => {
   item.addEventListener("dragstart", e => {
     e.dataTransfer.setData("text/aws-type", item.dataset.type);
+    e.dataTransfer.setData("text/plain", item.dataset.type);
     e.dataTransfer.effectAllowed = "copy";
   });
 });
 
-canvas.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
-canvas.addEventListener("drop", e => {
+const canvasWrap = document.querySelector(".canvas-wrap");
+canvasWrap.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+canvasWrap.addEventListener("drop", e => {
   e.preventDefault();
-  const type = e.dataTransfer.getData("text/aws-type");
+  const type = e.dataTransfer.getData("text/aws-type") || e.dataTransfer.getData("text/plain");
   if (!type) return;
   const pt = clientToWorld(e.clientX, e.clientY);
-  addNode(type, pt.x - NODE_W / 2, pt.y - NODE_H / 2);
+  addNode(type, pt.x - NODE_MIN_W / 2, pt.y - NODE_H / 2);
 });
 
 canvas.addEventListener("mousedown", e => {

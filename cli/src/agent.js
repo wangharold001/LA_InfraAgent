@@ -1,10 +1,21 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createDiagram, TOOLS } from "./diagram.js";
 
-const SYSTEM = (repoContext) => {
+export const MODE_PROMPTS = {
+  minimal:    "COST MODE — Minimal: prioritize zero fixed costs. Use serverless-first (Lambda, DynamoDB, S3, API Gateway). Avoid VPCs, NAT gateways, and any always-on compute unless the use case strictly requires it. Set removalPolicy DESTROY on everything.",
+  simple:     "COST MODE — Simple: prefer managed serverless services but allow one always-on tier (e.g. a single-AZ RDS or a single Fargate service) if the use case needs it. No VPC unless required. removalPolicy RETAIN on stateful resources, DESTROY elsewhere.",
+  standard:   "COST MODE — Standard: production-ready but cost-conscious. Use a VPC with public and private subnets and a single NAT gateway. Single-AZ for databases unless load demands otherwise. Add SQS for async decoupling where appropriate. removalPolicy SNAPSHOT for databases, RETAIN for other stateful resources.",
+  enterprise: "COST MODE — Enterprise: assume high-availability and compliance requirements. Multi-AZ for all stateful resources, ElastiCache caching layer, ALB in front of compute, WAF, encryption in transit and at rest everywhere, CloudWatch alarms on all critical paths. removalPolicy SNAPSHOT for databases.",
+};
+
+const SYSTEM = (repoContext, mode) => {
   let prompt = `\
 You are an expert AWS solutions architect. Your output is consumed by a downstream CDK code-generation agent — every node and edge must be filled in completely so that agent needs zero guesswork.
-Use the provided tools to build the diagram. Do not explain — just call the tools.
+Use the provided tools to build the diagram. Do not explain — just call the tools.`;
+
+  if (mode && MODE_PROMPTS[mode]) prompt += `\n\n${MODE_PROMPTS[mode]}`;
+
+  prompt += `
 
 METADATA — call set_metadata first with name, stackName, region, and environment (dev/staging/prod).
 
@@ -29,13 +40,11 @@ EDGES — always call add_edge with:
 LAYOUT — left-to-right data flow (x ≥ 320px between same-row nodes), top-to-bottom tiers (y ~160px apart).
 Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user. Use "external" for anything else.`;
 
-  if (repoContext) {
-    prompt += `\n\nRepository files:\n${repoContext}`;
-  }
+  if (repoContext) prompt += `\n\nRepository files:\n${repoContext}`;
   return prompt;
 };
 
-export async function runAgent(repoContext, userPrompt, apiKey, { onTool } = {}) {
+export async function runAgent(repoContext, userPrompt, apiKey, { onTool, mode } = {}) {
   if (process.env.MOCK_API === "true") {
     const { state, executeTool } = createDiagram();
     executeTool("set_metadata", { name: "Mock Architecture", stackName: "MockStack", region: "us-east-1", environment: "dev" });
