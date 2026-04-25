@@ -1498,14 +1498,40 @@ document.getElementById("btnNew").addEventListener("click", () => {
   render();
 });
 
-document.getElementById("btnSave").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName.replace(/\.html$/, ".json");
-  a.click();
-  URL.revokeObjectURL(url);
+document.getElementById("btnSave").addEventListener("click", async () => {
+  if (_fileHandle) {
+    // Already connected — just save
+    await _doSave();
+    return;
+  }
+  if (window.showSaveFilePicker) {
+    // Use File System Access API so the file lands at the right path
+    const suggested = __STATE_JSON_PATH__
+      ? __STATE_JSON_PATH__.split(/[\\/]/).pop()
+      : fileName.replace(/\.html$/, ".json");
+    try {
+      _fileHandle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+      });
+      const el = document.getElementById("saveStatus");
+      el.textContent = "⟳ " + _fileHandle.name;
+      el.style.color = "var(--muted)";
+      if (__STATE_JSON_PATH__) document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
+      await _doSave();
+    } catch (e) {
+      if (e.name !== "AbortError") console.error(e);
+    }
+  } else {
+    // Fallback: download
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName.replace(/\.html$/, ".json");
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 });
 
 document.getElementById("btnConnect").addEventListener("click", _connectFile);

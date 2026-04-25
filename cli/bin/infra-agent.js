@@ -63,16 +63,44 @@ const state = await runAgent(repoContext, userPrompt, apiKey, {
 
 console.log(`\n✅ Architecture generated: ${state.nodes.length} resources, ${state.edges.length} connections`);
 
-// Save diagram
+// Save diagram + open browser
 const diagramPath = writeAndOpen(state, outputPath);
-console.log(`📊 Diagram saved: ${diagramPath}`);
+const stateJsonPath = outputPath.replace(/\.html$/, ".state.json");
+console.log(`📊 Diagram opened: ${diagramPath}`);
+console.log(`📄 State file:     ${stateJsonPath}`);
+
+// ── Wait for user to finish editing in the browser ──────────────────────────
+console.log("\n🖊️  Edit the diagram in your browser.");
+console.log("   When done, click Save JSON (or Cmd+S) and save to:");
+console.log(`   ${stateJsonPath}`);
+console.log("   Then press Enter here to continue.\n");
+
+const rlEdit = readline.createInterface({ input: process.stdin, output: process.stdout });
+await rlEdit.question("Press Enter when your diagram is ready...");
+rlEdit.close();
+
+// Read updated state from the JSON file if the user saved changes
+let finalState = state;
+if (fs.existsSync(stateJsonPath)) {
+  try {
+    const updated = JSON.parse(fs.readFileSync(stateJsonPath, "utf8"));
+    if (Array.isArray(updated.nodes) && Array.isArray(updated.edges)) {
+      finalState = updated;
+      console.log(`\n✅ Loaded updated diagram: ${finalState.nodes.length} resources, ${finalState.edges.length} connections`);
+    }
+  } catch {
+    console.log("⚠️  Could not parse state file — using original generated diagram.");
+  }
+} else {
+  console.log("ℹ️  No saved state file found — using original generated diagram.");
+}
 
 // ============================================================================
 // PHASE 2: User Approval
 // ============================================================================
 console.log("\n📍 PHASE 2: Review & Approval\n");
 
-const approved = await getApproval(state);
+const approved = await getApproval(finalState);
 
 if (!approved) {
   console.log("\n⏸️  Process stopped. You can:");
@@ -88,7 +116,7 @@ if (!approved) {
 console.log("\n📍 PHASE 3: CDK Code Generation\n");
 
 try {
-  const generatedFiles = await generateCDKCode(state, cdkOutputDir, apiKey);
+  const generatedFiles = await generateCDKCode(finalState, cdkOutputDir, apiKey);
 
   console.log(`\n✅ Generated ${generatedFiles.length} CDK files:`);
   for (const file of generatedFiles) {
@@ -96,7 +124,7 @@ try {
   }
 
   // Generate README
-  const readmePath = generateReadme(cdkOutputDir, state.metadata);
+  const readmePath = generateReadme(cdkOutputDir, finalState.metadata);
   console.log(`   - README.md`);
 
   console.log(`\n📁 CDK project location: ${cdkOutputDir}`);
@@ -116,7 +144,7 @@ const shouldDeploy = await rl2.question('Deploy to AWS now? (yes/no): ');
 rl2.close();
 
 if (shouldDeploy.trim().toLowerCase() === "yes" || shouldDeploy.trim().toLowerCase() === "y") {
-  const deployed = await deployCDK(cdkOutputDir, state.metadata);
+  const deployed = await deployCDK(cdkOutputDir, finalState.metadata);
 
   if (deployed) {
     console.log("\n" + "=".repeat(80));
