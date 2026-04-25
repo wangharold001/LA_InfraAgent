@@ -1,0 +1,27 @@
+{
+  "name": "la-infra-agent",
+  "version": "0.1.0",
+  "description": "Read your repo and generate an AWS architecture diagram",
+  "type": "module",
+  "bin": {
+    "infra-agent": "./bin/infra-agent.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "assets"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
