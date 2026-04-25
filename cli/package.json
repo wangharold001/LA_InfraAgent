@@ -1,7 +1,7 @@
 {
   "name": "la-infra-agent",
   "version": "0.1.0",
-  "description": "Read your repo and generate an AWS architecture diagram",
+  "description": "AI-powered AWS infrastructure agent: from prompt to deployed CDK code",
   "type": "module",
   "bin": {
     "infra-agent": "./bin/infra-agent.js"
