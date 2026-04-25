@@ -16,15 +16,12 @@ export async function writeAndOpen(state, outputPath) {
   // Start local server — browser POSTs state changes to /state
   const { server, port } = await startServer(outputPath, stateJsonPath);
 
-  // Inject state, file path hint, and server port into the HTML
+  // Inject state and config into the cli-config script block in the HTML shell
   const html = fs.readFileSync(TEMPLATE, "utf8");
-  const injected = html
-    .replace("let state = freshState();",
-      `let state = ${JSON.stringify(state, null, 2)};`)
-    .replace("const __STATE_JSON_PATH__ = null;",
-      `const __STATE_JSON_PATH__ = ${JSON.stringify(stateJsonPath)};`)
-    .replace("const __SERVER_PORT__ = null;",
-      `const __SERVER_PORT__ = ${port};`);
+  const injected = html.replace(
+    `const __STATE_JSON_PATH__ = null;\nconst __SERVER_PORT__ = null;\nvar __DIAGRAM_STATE__ = null;`,
+    `const __STATE_JSON_PATH__ = ${JSON.stringify(stateJsonPath)};\nconst __SERVER_PORT__ = ${port};\nvar __DIAGRAM_STATE__ = ${JSON.stringify(state)};`
+  );
 
   fs.writeFileSync(outputPath, injected, "utf8");
 

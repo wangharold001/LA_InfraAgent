@@ -1,5 +1,15 @@
 import http from "http";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const ASSETS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets");
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".js":   "text/javascript; charset=utf-8",
+};
 
 export function startServer(htmlPath, stateJsonPath) {
   return new Promise((resolve, reject) => {
@@ -13,12 +23,28 @@ export function startServer(htmlPath, stateJsonPath) {
       if (req.method === "GET" && req.url === "/") {
         try {
           const html = fs.readFileSync(htmlPath, "utf8");
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.writeHead(200, { "Content-Type": MIME[".html"] });
           res.end(html);
-        } catch (e) {
+        } catch {
           res.writeHead(500); res.end("Could not read diagram file");
         }
         return;
+      }
+
+      // Serve static assets (CSS, JS) from assets directory
+      if (req.method === "GET") {
+        const ext = path.extname(req.url);
+        if (MIME[ext]) {
+          const assetPath = path.join(ASSETS_DIR, path.basename(req.url));
+          try {
+            const content = fs.readFileSync(assetPath, "utf8");
+            res.writeHead(200, { "Content-Type": MIME[ext] });
+            res.end(content);
+          } catch {
+            res.writeHead(404); res.end("Not found");
+          }
+          return;
+        }
       }
 
       if (req.method === "POST" && req.url === "/state") {
