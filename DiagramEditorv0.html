@@ -111,9 +111,12 @@
   .node-port {
     fill: var(--surface);
     stroke: var(--muted);
-    stroke-width: 1;
+    stroke-width: 1.5;
     cursor: crosshair;
+    opacity: 0;
+    transition: opacity 0.1s;
   }
+  .node-group:hover .node-port { opacity: 1; }
   .node-port:hover { stroke: var(--accent); fill: var(--accent); }
 
   .edge {
@@ -211,6 +214,183 @@
   .json-pane .key { color: #185fa5; }
   .json-pane .str { color: #3b6d11; }
   .json-pane .num { color: #854f0b; }
+
+  /* Chat Panel */
+  .chat-panel {
+    position: fixed;
+    top: 0;
+    right: -420px;
+    width: 420px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    transition: right 0.25s ease;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.08);
+  }
+  .chat-panel.open { right: 0; }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    height: 44px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  .chat-header .chat-title { font-weight: 500; font-size: 14px; flex: 1; }
+  .chat-header .chat-model { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .chat-header button {
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .chat-header button:hover { background: var(--bg); }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .chat-msg {
+    max-width: 88%;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .chat-msg.user {
+    align-self: flex-end;
+    background: var(--sel);
+    color: #fff;
+    border-bottom-right-radius: 2px;
+  }
+  .chat-msg.assistant {
+    align-self: flex-start;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-bottom-left-radius: 2px;
+  }
+  .chat-msg.system-note {
+    align-self: center;
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-style: italic;
+    border: none;
+    padding: 2px 0;
+  }
+  .chat-msg.error {
+    align-self: flex-start;
+    background: #fcebeb;
+    border: 1px solid #f0c5c5;
+    color: var(--accent);
+    border-bottom-left-radius: 2px;
+  }
+
+  .chat-typing {
+    align-self: flex-start;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    border-bottom-left-radius: 2px;
+    padding: 10px 14px;
+    display: none;
+    gap: 4px;
+    align-items: center;
+  }
+  .chat-typing.visible { display: flex; }
+  .chat-typing span {
+    width: 6px; height: 6px;
+    background: var(--muted);
+    border-radius: 50%;
+    animation: bounce 1.2s infinite;
+  }
+  .chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-5px); }
+  }
+
+  .chat-input-area {
+    border-top: 1px solid var(--line);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .chat-api-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .chat-api-row label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .chat-api-row input {
+    flex: 1;
+    padding: 4px 7px;
+    font: 12px var(--mono);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .chat-api-row input:focus { outline: 1px solid var(--sel); border-color: var(--sel); }
+  .chat-compose {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .chat-compose textarea {
+    flex: 1;
+    padding: 7px 9px;
+    font: 13px var(--font);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+    resize: none;
+    min-height: 38px;
+    max-height: 120px;
+    line-height: 1.4;
+  }
+  .chat-compose textarea:focus { outline: 1px solid var(--sel); border-color: var(--sel); }
+  .chat-send {
+    padding: 7px 14px;
+    background: var(--sel);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chat-send:hover { background: #2b6fc0; }
+  .chat-send:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+
+  .chat-context-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chat-context-row label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .chat-context-row input[type=checkbox] { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -219,6 +399,7 @@
     <div class="title">AWS Diagram</div>
     <span class="file-name" id="fileName">untitled.arch.json</span>
     <button id="btnNew">New</button>
+    <button id="btnChatAI" style="background:#378add;color:#fff;border-color:#2b6fc0;font-weight:500;">Chat with AI</button>
     <button id="btnOpen">Open</button>
     <button id="btnSave">Save</button>
     <button id="btnExportMmd">Copy as Mermaid</button>
@@ -251,12 +432,108 @@
   <div class="canvas-wrap">
     <svg id="canvas" class="canvas" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" fill="#2c2c2a"/>
         </marker>
-        <marker id="arrowhead-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <marker id="arrowhead-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" fill="#378add"/>
         </marker>
+        <symbol id="icon-lambda" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <text x="12" y="18" text-anchor="middle" fill="white" font-size="16" font-weight="600" font-family="serif">λ</text>
+        </symbol>
+        <symbol id="icon-ec2" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <rect x="3" y="5" width="15" height="4.5" rx="1" fill="none" stroke="white" stroke-width="1.3"/>
+          <rect x="3" y="14.5" width="15" height="4.5" rx="1" fill="none" stroke="white" stroke-width="1.3"/>
+          <circle cx="20" cy="7.25" r="1.2" fill="white"/>
+          <circle cx="20" cy="16.75" r="1.2" fill="white"/>
+        </symbol>
+        <symbol id="icon-fargate" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <rect x="3" y="3" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+        </symbol>
+        <symbol id="icon-rds" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <ellipse cx="12" cy="7" rx="6.5" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="5.5" y1="7" x2="5.5" y2="17" stroke="white" stroke-width="1.3"/>
+          <line x1="18.5" y1="7" x2="18.5" y2="17" stroke="white" stroke-width="1.3"/>
+          <ellipse cx="12" cy="17" rx="6.5" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-dynamodb" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <path d="M12 4L20 12L12 20L4 12Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1"/>
+        </symbol>
+        <symbol id="icon-s3" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#1d9e75"/>
+          <ellipse cx="12" cy="7" rx="7" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="5" y1="7" x2="5" y2="18" stroke="white" stroke-width="1.3"/>
+          <line x1="19" y1="7" x2="19" y2="18" stroke="white" stroke-width="1.3"/>
+          <path d="M5 18Q12 21.5 19 18" fill="none" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-elasticache" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <path d="M13.5 3L7 13.5H12.5L10.5 21L17 10.5H11.5Z" fill="white"/>
+        </symbol>
+        <symbol id="icon-sqs" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <rect x="3" y="7" width="13" height="2.5" rx="1.2" fill="white"/>
+          <rect x="3" y="11" width="13" height="2.5" rx="1.2" fill="white"/>
+          <rect x="3" y="15" width="13" height="2.5" rx="1.2" fill="white"/>
+          <path d="M17 12H21M19.5 10L21 12L19.5 14" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-sns" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <path d="M4 9.5V14.5L8 14.5L14 18.5V5.5L8 9.5H4Z" fill="white"/>
+          <path d="M17 9Q19 12 17 15" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M19 7Q22 12 19 17" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-apigateway" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <path d="M7 4.5V4H10.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7 19.5V20H10.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 4H17V4.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 20H17V19.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="8" y1="9" x2="16" y2="9" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="12" x2="16" y2="12" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="15" x2="13" y2="15" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-alb" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <line x1="3" y1="12" x2="9" y2="12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="7" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="12" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="17" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <rect x="14" y="4.5" width="7" height="4" rx="1" fill="white"/>
+          <rect x="14" y="10" width="7" height="4" rx="1" fill="white"/>
+          <rect x="14" y="15.5" width="7" height="4" rx="1" fill="white"/>
+        </symbol>
+        <symbol id="icon-vpc" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#888780"/>
+          <path d="M12 3L20 7V13C20 17.5 16 20.5 12 22C8 20.5 4 17.5 4 13V7Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M8.5 12L11 14.5L15.5 10" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-cloudfront" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#888780"/>
+          <circle cx="12" cy="12" r="8" fill="none" stroke="white" stroke-width="1.3"/>
+          <ellipse cx="12" cy="12" rx="3.5" ry="8" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-external" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <rect x="4" y="8" width="12" height="12" rx="1.5" fill="none" stroke="white" stroke-width="1.5"/>
+          <path d="M13 4H20V11" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="20" y1="4" x2="12" y2="12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-user" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <circle cx="12" cy="8.5" r="3.5" fill="none" stroke="white" stroke-width="1.5"/>
+          <path d="M4.5 20C4.5 16 8 14 12 14C16 14 19.5 16 19.5 20" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
       </defs>
       <g id="viewport">
         <g id="edges"></g>
@@ -277,6 +554,41 @@
       <span class="info" id="jsonInfo">0 nodes, 0 edges</span>
     </div>
     <pre id="jsonView"></pre>
+  </div>
+</div>
+
+<!-- AI Chat Panel -->
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-header">
+    <div class="chat-title">Chat with AI</div>
+    <span class="chat-model">claude-sonnet-4-6</span>
+    <button id="btnClearChat">Clear</button>
+    <button id="btnCloseChat">✕</button>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>
+  </div>
+
+  <div class="chat-typing" id="chatTyping">
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="chat-input-area">
+    <div class="chat-api-row">
+      <label>API Key</label>
+      <input type="password" id="chatApiKey" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div class="chat-context-row">
+      <label>
+        <input type="checkbox" id="chatIncludeDiagram" checked>
+        Include current diagram as context
+      </label>
+    </div>
+    <div class="chat-compose">
+      <textarea id="chatInput" placeholder="Ask about your architecture…" rows="1"></textarea>
+      <button class="chat-send" id="chatSend">Send</button>
+    </div>
   </div>
 </div>
 
@@ -346,6 +658,7 @@ function render() {
       d: path,
       "marker-end": isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)"
     });
+    visible.dataset.edgeId = e.id;
     g.appendChild(hit);
     g.appendChild(visible);
     if (e.label) {
@@ -354,6 +667,11 @@ function render() {
       text.textContent = e.label;
       g.appendChild(text);
     }
+    g.addEventListener("dblclick", ev => {
+      ev.stopPropagation();
+      const mid = pathMidpoint(src, dst);
+      startEdgeEdit(e, mid.x, mid.y);
+    });
     edgesLayer.appendChild(g);
   }
 
@@ -377,13 +695,13 @@ function renderNode(n) {
   g.dataset.nodeId = n.id;
 
   g.appendChild(svg("rect", { class: "node-rect", x: 0, y: 0, width: NODE_W, height: NODE_H, rx: 4 }));
-  g.appendChild(svg("rect", { x: 0, y: 0, width: 4, height: NODE_H, fill: meta.color, rx: 4 }));
+  g.appendChild(svg("use", { href: "#icon-" + n.type, x: 8, y: (NODE_H - 24) / 2, width: 24, height: 24, "pointer-events": "none" }));
 
-  const title = svg("text", { class: "node-title", x: 12, y: 22 });
+  const title = svg("text", { class: "node-title", x: 40, y: NODE_H / 2 - 4 });
   title.textContent = n.label || meta.label;
   g.appendChild(title);
 
-  const sub = svg("text", { class: "node-sub", x: 12, y: 40 });
+  const sub = svg("text", { class: "node-sub", x: 40, y: NODE_H / 2 + 10 });
   sub.textContent = meta.label.toLowerCase();
   g.appendChild(sub);
 
@@ -392,20 +710,61 @@ function renderNode(n) {
   port.dataset.role = "port";
   g.appendChild(port);
 
+  g.addEventListener("dblclick", e => {
+    e.stopPropagation();
+    startNodeEdit(n);
+  });
+
   return g;
 }
 
+function getBestPorts(src, dst) {
+  const srcCx = src.x + NODE_W / 2, srcCy = src.y + NODE_H / 2;
+  const dstCx = dst.x + NODE_W / 2, dstCy = dst.y + NODE_H / 2;
+  const dx = dstCx - srcCx, dy = dstCy - srcCy;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sx: src.x + NODE_W, sy: srcCy, tx: dst.x,          ty: dstCy, horiz: true,  dir: 1  }
+      : { sx: src.x,          sy: srcCy, tx: dst.x + NODE_W, ty: dstCy, horiz: true,  dir: -1 };
+  } else {
+    return dy >= 0
+      ? { sx: srcCx, sy: src.y + NODE_H, tx: dstCx, ty: dst.y,          horiz: false, dir: 1  }
+      : { sx: srcCx, sy: src.y,          tx: dstCx, ty: dst.y + NODE_H, horiz: false, dir: -1 };
+  }
+}
+
 function edgePath(src, dst) {
-  const x1 = src.x + NODE_W, y1 = src.y + NODE_H / 2;
-  const x2 = dst.x,          y2 = dst.y + NODE_H / 2;
-  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
-  return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+  const p = getBestPorts(src, dst);
+  let cp1x, cp1y, cp2x, cp2y;
+  if (p.horiz) {
+    const off = Math.max(40, Math.abs(p.tx - p.sx) * 0.5);
+    cp1x = p.sx + p.dir * off; cp1y = p.sy;
+    cp2x = p.tx - p.dir * off; cp2y = p.ty;
+  } else {
+    const off = Math.max(40, Math.abs(p.ty - p.sy) * 0.5);
+    cp1x = p.sx; cp1y = p.sy + p.dir * off;
+    cp2x = p.tx; cp2y = p.ty - p.dir * off;
+  }
+  return `M${p.sx},${p.sy} C${cp1x},${cp1y} ${cp2x},${cp2y} ${p.tx},${p.ty}`;
 }
 
 function pathMidpoint(src, dst) {
-  const x1 = src.x + NODE_W, y1 = src.y + NODE_H / 2;
-  const x2 = dst.x,          y2 = dst.y + NODE_H / 2;
-  return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4 };
+  const p = getBestPorts(src, dst);
+  return { x: (p.sx + p.tx) / 2, y: (p.sy + p.ty) / 2 - 8 };
+}
+
+function applySelection(kind, id) {
+  selection = kind ? { kind, id } : null;
+  for (const el of nodesLayer.querySelectorAll(".node-group")) {
+    el.classList.toggle("selected", kind === "node" && el.dataset.nodeId === id);
+  }
+  for (const el of edgesLayer.querySelectorAll(".edge")) {
+    const isSel = kind === "edge" && el.dataset.edgeId === id;
+    el.classList.toggle("selected", isSel);
+    el.setAttribute("marker-end", isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)");
+  }
+  renderInspector();
+  renderJson();
 }
 
 function svg(name, attrs) {
@@ -573,8 +932,7 @@ canvas.addEventListener("mousedown", e => {
   const nodeGroup = target.closest(".node-group");
   if (nodeGroup) {
     const id = nodeGroup.dataset.nodeId;
-    selection = { kind: "node", id };
-    render();
+    applySelection("node", id);
     const n = state.nodes.find(x => x.id === id);
     const pt = clientToWorld(e.clientX, e.clientY);
     drag = { kind: "node-move", id, offsetX: pt.x - n.x, offsetY: pt.y - n.y };
@@ -582,14 +940,12 @@ canvas.addEventListener("mousedown", e => {
   }
 
   if (target.classList.contains("edge-hit")) {
-    selection = { kind: "edge", id: target.dataset.edgeId };
-    render();
+    applySelection("edge", target.dataset.edgeId);
     return;
   }
 
   if (target === canvas) {
-    selection = null;
-    render();
+    applySelection(null, null);
     drag = { kind: "pan", startX: e.clientX, startY: e.clientY, vx: viewport.x, vy: viewport.y };
     canvas.classList.add("panning");
   }
@@ -628,6 +984,88 @@ window.addEventListener("mouseup", e => {
   canvas.classList.remove("panning");
   drag = null;
 });
+
+function startNodeEdit(n) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = rect.left + viewport.x + (n.x + 40) * viewport.z;
+  const sy = rect.top  + viewport.y + (n.y + NODE_H / 2 - 13) * viewport.z;
+  const sw = (NODE_W - 48) * viewport.z;
+
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = n.label || "";
+  Object.assign(inp.style, {
+    position: "fixed", left: sx + "px", top: sy + "px",
+    width: sw + "px", height: (24 * viewport.z) + "px",
+    font: `500 ${13 * viewport.z}px ui-sans-serif,system-ui,sans-serif`,
+    border: "none", outline: "2px solid #378add",
+    background: "#fff", padding: "2px 4px",
+    borderRadius: "2px", zIndex: "1000", boxSizing: "border-box",
+  });
+  document.body.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const val = inp.value.trim();
+    n.label = val || (SERVICE_META[n.type] ? SERVICE_META[n.type].label : n.type);
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+    render();
+  };
+  const discard = () => {
+    done = true;
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+  };
+  inp.addEventListener("keydown", ev => {
+    if (ev.key === "Enter")  { ev.preventDefault(); commit(); }
+    if (ev.key === "Escape") { discard(); }
+  });
+  inp.addEventListener("blur", commit);
+}
+
+function startEdgeEdit(e, worldX, worldY) {
+  const rect = canvas.getBoundingClientRect();
+  const cx = rect.left + viewport.x + worldX * viewport.z;
+  const cy = rect.top  + viewport.y + worldY * viewport.z;
+  const sw = 120 * viewport.z;
+
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = e.label || "";
+  inp.placeholder = "label…";
+  Object.assign(inp.style, {
+    position: "fixed", left: (cx - sw / 2) + "px", top: (cy - 12 * viewport.z) + "px",
+    width: sw + "px", height: (24 * viewport.z) + "px",
+    font: `${12 * viewport.z}px ui-sans-serif,system-ui,sans-serif`,
+    border: "none", outline: "2px solid #378add",
+    background: "#fff", padding: "2px 4px",
+    borderRadius: "2px", zIndex: "1000", boxSizing: "border-box", textAlign: "center",
+  });
+  document.body.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    e.label = inp.value.trim();
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+    render();
+  };
+  const discard = () => {
+    done = true;
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+  };
+  inp.addEventListener("keydown", ev => {
+    if (ev.key === "Enter")  { ev.preventDefault(); commit(); }
+    if (ev.key === "Escape") { discard(); }
+  });
+  inp.addEventListener("blur", commit);
+}
 
 function updateEdgePreview(fromNode, worldPt) {
   const x1 = fromNode.x + NODE_W, y1 = fromNode.y + NODE_H / 2;
@@ -730,6 +1168,284 @@ function toMermaid(s) {
 }
 
 render();
+
+// ── AI Chat ──────────────────────────────────────────────────────────────────
+
+const chatPanel    = document.getElementById("chatPanel");
+const chatMessages = document.getElementById("chatMessages");
+const chatTyping   = document.getElementById("chatTyping");
+const chatInput    = document.getElementById("chatInput");
+const chatSend     = document.getElementById("chatSend");
+const chatApiKey   = document.getElementById("chatApiKey");
+
+// Restore saved API key
+chatApiKey.value = localStorage.getItem("anthropic_api_key") || "";
+chatApiKey.addEventListener("change", () => {
+  localStorage.setItem("anthropic_api_key", chatApiKey.value.trim());
+});
+
+// Conversation history sent to the API (excludes system-note bubbles)
+let chatHistory = [];
+
+document.getElementById("btnChatAI").addEventListener("click", () => {
+  chatPanel.classList.add("open");
+  chatInput.focus();
+});
+
+document.getElementById("btnCloseChat").addEventListener("click", () => {
+  chatPanel.classList.remove("open");
+});
+
+document.getElementById("btnClearChat").addEventListener("click", () => {
+  chatHistory = [];
+  chatMessages.innerHTML = '<div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>';
+});
+
+// Auto-resize textarea
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+});
+
+// Send on Enter (Shift+Enter = newline)
+chatInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+
+chatSend.addEventListener("click", sendChat);
+
+function appendMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "chat-msg " + role;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+const CLAUDE_TOOLS = [
+  {
+    name: "add_node",
+    description: "Add an AWS service node to the diagram. Returns the node id for use with add_edge.",
+    input_schema: {
+      type: "object",
+      properties: {
+        type:  { type: "string", description: "One of: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user" },
+        label: { type: "string", description: "Display name for this node" },
+        x:     { type: "number", description: "Canvas x position (auto-placed if omitted)" },
+        y:     { type: "number", description: "Canvas y position (auto-placed if omitted)" }
+      },
+      required: ["type"]
+    }
+  },
+  {
+    name: "add_edge",
+    description: "Connect two nodes with a directed arrow.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from_id: { type: "string", description: "Source node id" },
+        to_id:   { type: "string", description: "Destination node id" },
+        label:   { type: "string", description: "Optional edge label, e.g. 'invokes'" }
+      },
+      required: ["from_id", "to_id"]
+    }
+  },
+  {
+    name: "clear_diagram",
+    description: "Remove all nodes and edges. Call before building a fresh architecture.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
+    name: "set_metadata",
+    description: "Set the diagram title.",
+    input_schema: {
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"]
+    }
+  },
+  {
+    name: "remove_object",
+    description: "Remove a node (and its connected edges) or a single edge by id. Prefer this over clear_diagram when only removing specific elements.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The id of the node or edge to remove" }
+      },
+      required: ["id"]
+    }
+  }
+];
+
+function autoPlace() {
+  const MIN_DIST = 300;
+  const candidates = [];
+  for (let row = 0; row < 8; row++)
+    for (let col = 0; col < 6; col++)
+      candidates.push({ x: 80 + col * 200, y: 80 + row * 180 });
+
+  for (const pt of candidates) {
+    const tooClose = state.nodes.some(n => {
+      const dx = n.x - pt.x, dy = n.y - pt.y;
+      return Math.sqrt(dx * dx + dy * dy) < MIN_DIST;
+    });
+    if (!tooClose) return pt;
+  }
+  const maxY = state.nodes.reduce((m, n) => Math.max(m, n.y), 0);
+  return { x: 80, y: maxY + 220 };
+}
+
+function executeTool(name, input) {
+  switch (name) {
+    case "add_node": {
+      const pos = (input.x != null && input.y != null) ? input : autoPlace();
+      const type = input.type in SERVICE_META ? input.type : "external";
+      const meta = SERVICE_META[type];
+      const n = {
+        id: uid("n"), type,
+        label: input.label || (meta ? meta.label : type),
+        x: Math.round(pos.x / 10) * 10,
+        y: Math.round(pos.y / 10) * 10,
+        props: meta?.defaults ? { ...meta.defaults } : {}
+      };
+      state.nodes.push(n);
+      render();
+      return { id: n.id, label: n.label };
+    }
+    case "add_edge": {
+      const src = state.nodes.find(n => n.id === input.from_id);
+      const dst = state.nodes.find(n => n.id === input.to_id);
+      if (!src) return { error: `Node ${input.from_id} not found` };
+      if (!dst) return { error: `Node ${input.to_id} not found` };
+      if (src.id === dst.id) return { error: "Cannot connect a node to itself" };
+      const e = { id: uid("e"), from: src.id, to: dst.id, label: input.label || "" };
+      state.edges.push(e);
+      render();
+      return { id: e.id };
+    }
+    case "clear_diagram":
+      state = freshState(); selection = null; render();
+      return { ok: true };
+    case "set_metadata":
+      state.metadata.name = input.name; renderJson();
+      return { ok: true };
+    case "remove_object": {
+      const nodeIdx = state.nodes.findIndex(n => n.id === input.id);
+      if (nodeIdx !== -1) {
+        state.nodes.splice(nodeIdx, 1);
+        state.edges = state.edges.filter(e => e.from !== input.id && e.to !== input.id);
+        if (selection?.id === input.id) selection = null;
+        render();
+        return { ok: true, removed: "node" };
+      }
+      const edgeIdx = state.edges.findIndex(e => e.id === input.id);
+      if (edgeIdx !== -1) {
+        state.edges.splice(edgeIdx, 1);
+        if (selection?.id === input.id) selection = null;
+        render();
+        return { ok: true, removed: "edge" };
+      }
+      return { error: `No node or edge with id ${input.id}` };
+    }
+    default:
+      return { error: `Unknown tool: ${name}` };
+  }
+}
+
+async function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  const apiKey = chatApiKey.value.trim() || localStorage.getItem("anthropic_api_key") || "";
+  if (!apiKey) { appendMsg("error", "Please enter your Anthropic API key above."); return; }
+
+  chatInput.value = ""; chatInput.style.height = "auto"; chatSend.disabled = true;
+  appendMsg("user", text);
+  chatHistory.push({ role: "user", content: text });
+  chatTyping.classList.add("visible");
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  try { await runAgentLoop(apiKey); }
+  catch (err) { chatTyping.classList.remove("visible"); appendMsg("error", "Network error: " + err.message); }
+
+  chatSend.disabled = false; chatInput.focus();
+}
+
+async function runAgentLoop(apiKey) {
+  while (true) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system: buildSystemPrompt(),
+        tools: CLAUDE_TOOLS,
+        messages: chatHistory
+      })
+    });
+
+    chatTyping.classList.remove("visible");
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      appendMsg("error", "API error: " + (err.error?.message || res.statusText));
+      return;
+    }
+
+    const data = await res.json();
+    const content = data.content || [];
+
+    const texts = content.filter(b => b.type === "text").map(b => b.text).join("\n\n");
+    if (texts) appendMsg("assistant", texts);
+
+    chatHistory.push({ role: "assistant", content });
+
+    if (data.stop_reason !== "tool_use") break;
+
+    const toolResults = [];
+    for (const block of content.filter(b => b.type === "tool_use")) {
+      appendMsg("system-note", `⚙ ${block.name}(${JSON.stringify(block.input)})`);
+      const result = executeTool(block.name, block.input);
+      toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
+    }
+
+    chatHistory.push({ role: "user", content: toolResults });
+    chatTyping.classList.add("visible");
+  }
+}
+
+function buildSystemPrompt() {
+  const includeDiagram = document.getElementById("chatIncludeDiagram").checked;
+  let prompt = `You are an expert AWS solutions architect embedded in a diagram editor.
+Use the provided tools to build and modify the diagram directly — don't just describe changes.
+Before building a new architecture from scratch, call clear_diagram first, then set_metadata with a meaningful name.
+Layout guide: vary BOTH x and y — never place all nodes in a single row or column. Use a 2D layout: left-to-right for data flow (x ~180 apart), top-to-bottom for tiers (y ~160 apart). Example: API Gateway at (80,200), Lambda at (300,200), DynamoDB at (520,200), S3 at (300,400). To prevent overlapping, ensure at least 200px distance in a single direction between any two nodes. 
+To remove a specific node or edge use remove_object(id) — only use clear_diagram to wipe everything.
+Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user.`;
+
+  if (includeDiagram) {
+    if (state.nodes.length > 0) {
+      const snap = {
+        name: state.metadata?.name,
+        nodes: state.nodes.map(n => ({ id: n.id, type: n.type, label: n.label })),
+        edges: state.edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label }))
+      };
+      prompt += `\n\nCurrent diagram:\n${JSON.stringify(snap, null, 2)}`;
+    } else {
+      prompt += `\n\nThe diagram is currently empty.`;
+    }
+  }
+  return prompt;
+}
 </script>
 </body>
 </html>
