@@ -2,12 +2,11 @@
 import path from "path";
 import fs from "fs";
 import readline from "readline/promises";
-import { execSync } from "child_process";
-import { startServer } from "../src/server.js";
+import { writeAndOpen } from "../src/renderer.js";
 import { runIaCPipeline } from "../src/iac-pipeline.js";
 
 const cwd = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd();
-const htmlPath      = path.join(cwd, "infra-diagram.html");
+const htmlPath     = path.join(cwd, "infra-diagram.html");
 const stateJsonPath = path.join(cwd, "infra-diagram.state.json");
 const cdkOutputDir  = path.join(cwd, "cdk-infrastructure");
 
@@ -17,25 +16,34 @@ if (!fs.existsSync(htmlPath)) {
   process.exit(1);
 }
 
-const { server, port } = await startServer(htmlPath, stateJsonPath);
-const url = `http://127.0.0.1:${port}`;
+// Load existing state so the browser shows the current diagram.
+// Falls back to empty state if no state file exists yet.
+let initialState = {
+  schemaVersion: "0.2.0",
+  metadata: { name: "Untitled", stackName: "", region: "us-east-1", account: "", environment: "dev", createdAt: new Date().toISOString() },
+  nodes: [],
+  edges: []
+};
+if (fs.existsSync(stateJsonPath)) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(stateJsonPath, "utf8"));
+    if (Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) initialState = parsed;
+  } catch {}
+}
 
-const opener =
-  process.platform === "darwin" ? "open" :
-  process.platform === "win32"  ? "start" :
-  "xdg-open";
-try { execSync(`${opener} "${url}"`, { stdio: "ignore" }); } catch {}
+// Re-inject current state + live server port into the HTML so auto-save works.
+const { port, closeServer } = await writeAndOpen(initialState, htmlPath);
 
-console.log(`\nDiagram open at ${url}`);
+console.log(`\nDiagram open at http://127.0.0.1:${port}`);
 console.log("Edit it in the browser. Changes save automatically.");
 console.log("\nPress Enter to generate IaC from this diagram, or Ctrl+C to exit.\n");
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 await rl.question("Press Enter when your diagram is ready...");
 rl.close();
-server.close();
+closeServer();
 
-// Load latest saved state
+// Read the state the browser last saved
 let finalState = null;
 if (fs.existsSync(stateJsonPath)) {
   try {
