@@ -54,7 +54,10 @@ The agent reads your repository context and uses Claude to design AWS architectu
 What infrastructure would you like to build?
 > I need a serverless API with authentication and a database
 
-🤖 Generating architecture with Claude AI...
+Generation modes: [1] minimal  [2] simple  [3] standard  [4] enterprise
+Choose mode (default: simple): 2
+
+🤖 Generating architecture with Claude AI (mode: simple)...
   + node  lambda        AuthFunction
   + node  apigateway    RestAPI
   + node  dynamodb      UsersTable
@@ -68,6 +71,17 @@ The agent:
 - Assigns proper IAM permissions
 - Includes production-ready defaults
 - Saves visual diagram as HTML
+
+#### Generation Modes
+
+| Mode | Description | Best for |
+|------|-------------|----------|
+| `minimal` | Serverless-only (Lambda, DynamoDB, S3, API Gateway). No VPC, no always-on compute. `removalPolicy: DESTROY` everywhere. | Prototypes, lowest possible cost |
+| `simple` | Serverless-first, but allows one always-on tier (e.g. single-AZ RDS or Fargate). No VPC unless required. | Small production apps |
+| `standard` | VPC with public/private subnets, single NAT gateway, single-AZ databases, SQS for async decoupling. `removalPolicy: SNAPSHOT` for databases. | Cost-conscious production |
+| `enterprise` | Multi-AZ stateful resources, ElastiCache, ALB, WAF, full encryption, CloudWatch alarms on all critical paths. | High-availability, compliance |
+
+You can enter the number (`1`–`4`) or the mode name directly. Defaults to `simple`.
 
 ### Phase 2: Review & Approval
 
@@ -377,7 +391,7 @@ cdk diff
 cdk deploy
 
 # View CloudFormation outputs
-cdk outputs
+cdk deploy --outputs-file outputs.json
 
 # View synthesized CloudFormation
 cat cdk.out/*.template.json
