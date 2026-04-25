@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AWS Diagram Editor</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --surface: #ffffff;
+    --ink: #1f1f1c;
+    --muted: #6b6b64;
+    --line: #d9d7ce;
+    --line-strong: #2c2c2a;
+    --accent: #d85a30;
+    --sel: #378add;
+    --sel-bg: #e6f1fb;
+    --font: ui-sans-serif, -apple-system, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: var(--font); color: var(--ink); background: var(--bg); }
+  button { font: inherit; color: inherit; }
+
+  .app {
+    display: grid;
+    grid-template-columns: 180px 1fr 280px;
+    grid-template-rows: 44px 1fr 200px;
+    height: 100vh;
+    gap: 1px;
+    background: var(--line);
+  }
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    background: var(--surface);
+  }
+  .topbar .title { font-weight: 500; margin-right: auto; letter-spacing: -0.01em; }
+  .topbar button {
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .topbar button:hover { background: var(--bg); }
+  .topbar .file-name { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 10px; }
+
+  .palette {
+    background: var(--surface);
+    padding: 12px;
+    overflow-y: auto;
+  }
+  .palette h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .palette-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: grab;
+    user-select: none;
+    font-size: 13px;
+  }
+  .palette-item:hover { background: var(--bg); border-color: var(--line); }
+  .palette-item:active { cursor: grabbing; }
+  .palette-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
+  .canvas-wrap {
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  .canvas {
+    width: 100%;
+    height: 100%;
+    cursor: default;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-color: var(--surface);
+  }
+  .canvas.panning { cursor: grabbing; }
+
+  .node-group { cursor: move; }
+  .node-rect {
+    fill: var(--surface);
+    stroke: var(--line-strong);
+    stroke-width: 1;
+  }
+  .node-group.selected .node-rect {
+    stroke: var(--sel);
+    stroke-width: 2;
+  }
+  .node-title {
+    font: 500 13px var(--font);
+    fill: var(--ink);
+    pointer-events: none;
+  }
+  .node-sub {
+    font: 11px var(--mono);
+    fill: var(--muted);
+    pointer-events: none;
+  }
+  .node-port {
+    fill: var(--surface);
+    stroke: var(--muted);
+    stroke-width: 1;
+    cursor: crosshair;
+  }
+  .node-port:hover { stroke: var(--accent); fill: var(--accent); }
+
+  .edge {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1.5;
+  }
+  .edge.selected { stroke: var(--sel); stroke-width: 2; }
+  .edge-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    cursor: pointer;
+  }
+  .edge-label {
+    font: 11px var(--font);
+    fill: var(--muted);
+    text-anchor: middle;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: var(--surface);
+    stroke-width: 4;
+    stroke-linejoin: round;
+  }
+  .edge-preview {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+    pointer-events: none;
+  }
+
+  .inspector {
+    background: var(--surface);
+    padding: 14px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  .inspector h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .inspector .empty { color: var(--muted); font-style: italic; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    padding: 5px 7px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .field textarea { font-family: var(--mono); font-size: 12px; min-height: 50px; resize: vertical; }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    outline: 1px solid var(--sel);
+    outline-offset: -1px;
+    border-color: var(--sel);
+  }
+  .inspector .danger {
+    margin-top: 10px;
+    padding: 5px 10px;
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--accent);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .inspector .danger:hover { background: #fcebeb; }
+
+  .json-pane {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .json-pane .json-head {
+    display: flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--line);
+    gap: 10px;
+  }
+  .json-pane .json-head h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; font-weight: 500; }
+  .json-pane .json-head .info { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+  .json-pane pre {
+    margin: 0;
+    padding: 10px 14px;
+    overflow: auto;
+    font: 12px/1.5 var(--mono);
+    flex: 1;
+    color: var(--ink);
+  }
+  .json-pane .key { color: #185fa5; }
+  .json-pane .str { color: #3b6d11; }
+  .json-pane .num { color: #854f0b; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="title">AWS Diagram</div>
+    <span class="file-name" id="fileName">untitled.arch.json</span>
+    <button id="btnNew">New</button>
+    <button id="btnOpen">Open</button>
+    <button id="btnSave">Save</button>
+    <button id="btnExportMmd">Copy as Mermaid</button>
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+  </div>
+
+  <div class="palette">
+    <h3>Compute</h3>
+    <div class="palette-item" draggable="true" data-type="lambda"><div class="palette-swatch" style="background:#EF9F27"></div>Lambda</div>
+    <div class="palette-item" draggable="true" data-type="ec2"><div class="palette-swatch" style="background:#EF9F27"></div>EC2</div>
+    <div class="palette-item" draggable="true" data-type="fargate"><div class="palette-swatch" style="background:#EF9F27"></div>Fargate</div>
+    <h3 style="margin-top:14px">Data</h3>
+    <div class="palette-item" draggable="true" data-type="rds"><div class="palette-swatch" style="background:#378add"></div>RDS</div>
+    <div class="palette-item" draggable="true" data-type="dynamodb"><div class="palette-swatch" style="background:#378add"></div>DynamoDB</div>
+    <div class="palette-item" draggable="true" data-type="s3"><div class="palette-swatch" style="background:#1d9e75"></div>S3</div>
+    <div class="palette-item" draggable="true" data-type="elasticache"><div class="palette-swatch" style="background:#378add"></div>ElastiCache</div>
+    <h3 style="margin-top:14px">Integration</h3>
+    <div class="palette-item" draggable="true" data-type="sqs"><div class="palette-swatch" style="background:#d85a30"></div>SQS</div>
+    <div class="palette-item" draggable="true" data-type="sns"><div class="palette-swatch" style="background:#d85a30"></div>SNS</div>
+    <div class="palette-item" draggable="true" data-type="apigateway"><div class="palette-swatch" style="background:#d85a30"></div>API Gateway</div>
+    <div class="palette-item" draggable="true" data-type="alb"><div class="palette-swatch" style="background:#d85a30"></div>ALB</div>
+    <h3 style="margin-top:14px">Network</h3>
+    <div class="palette-item" draggable="true" data-type="vpc"><div class="palette-swatch" style="background:#888780"></div>VPC</div>
+    <div class="palette-item" draggable="true" data-type="cloudfront"><div class="palette-swatch" style="background:#888780"></div>CloudFront</div>
+    <h3 style="margin-top:14px">Other</h3>
+    <div class="palette-item" draggable="true" data-type="external"><div class="palette-swatch" style="background:#6b6b64"></div>External</div>
+    <div class="palette-item" draggable="true" data-type="user"><div class="palette-swatch" style="background:#6b6b64"></div>User</div>
+  </div>
+
+  <div class="canvas-wrap">
+    <svg id="canvas" class="canvas" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#2c2c2a"/>
+        </marker>
+        <marker id="arrowhead-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#378add"/>
+        </marker>
+      </defs>
+      <g id="viewport">
+        <g id="edges"></g>
+        <g id="nodes"></g>
+        <path id="edgePreview" class="edge-preview" style="display:none"></path>
+      </g>
+    </svg>
+  </div>
+
+  <div class="inspector" id="inspector">
+    <h3>Inspector</h3>
+    <div class="empty">Select a node or edge to edit its properties.</div>
+  </div>
+
+  <div class="json-pane">
+    <div class="json-head">
+      <h3>File contents</h3>
+      <span class="info" id="jsonInfo">0 nodes, 0 edges</span>
+    </div>
+    <pre id="jsonView"></pre>
+  </div>
+</div>
+
+<script>
+const SERVICE_META = {
+  lambda:      { label: "Lambda",      color: "#EF9F27", defaults: { runtime: "nodejs20.x", memory: 512 } },
+  ec2:         { label: "EC2",         color: "#EF9F27", defaults: { instanceType: "t3.micro" } },
+  fargate:     { label: "Fargate",     color: "#EF9F27", defaults: { cpu: 256, memory: 512 } },
+  rds:         { label: "RDS",         color: "#378add", defaults: { engine: "postgres", instanceClass: "db.t3.micro" } },
+  dynamodb:    { label: "DynamoDB",    color: "#378add", defaults: { billingMode: "PAY_PER_REQUEST" } },
+  s3:          { label: "S3",          color: "#1d9e75", defaults: {} },
+  elasticache: { label: "ElastiCache", color: "#378add", defaults: { engine: "redis" } },
+  sqs:         { label: "SQS",         color: "#d85a30", defaults: {} },
+  sns:         { label: "SNS",         color: "#d85a30", defaults: {} },
+  apigateway:  { label: "API Gateway", color: "#d85a30", defaults: {} },
+  alb:         { label: "ALB",         color: "#d85a30", defaults: {} },
+  vpc:         { label: "VPC",         color: "#888780", defaults: { cidr: "10.0.0.0/16" } },
+  cloudfront:  { label: "CloudFront",  color: "#888780", defaults: {} },
+  external:    { label: "External",    color: "#6b6b64", defaults: {} },
+  user:        { label: "User",        color: "#6b6b64", defaults: {} },
+};
+
+const NODE_W = 140;
+const NODE_H = 56;
+
+let state = freshState();
+let selection = null;
+let viewport = { x: 0, y: 0, z: 1 };
+let fileName = "untitled.arch.json";
+
+function freshState() {
+  return {
+    schemaVersion: "0.1.0",
+    metadata: { name: "Untitled", createdAt: new Date().toISOString() },
+    nodes: [],
+    edges: []
+  };
+}
+
+function uid(prefix) {
+  return prefix + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+const canvas = document.getElementById("canvas");
+const nodesLayer = document.getElementById("nodes");
+const edgesLayer = document.getElementById("edges");
+const viewportG = document.getElementById("viewport");
+const edgePreview = document.getElementById("edgePreview");
+const inspector = document.getElementById("inspector");
+const jsonView = document.getElementById("jsonView");
+const jsonInfo = document.getElementById("jsonInfo");
+const fileNameEl = document.getElementById("fileName");
+
+function render() {
+  edgesLayer.innerHTML = "";
+  for (const e of state.edges) {
+    const src = state.nodes.find(n => n.id === e.from);
+    const dst = state.nodes.find(n => n.id === e.to);
+    if (!src || !dst) continue;
+    const path = edgePath(src, dst);
+    const g = svg("g");
+    const hit = svg("path", { class: "edge-hit", d: path });
+    hit.dataset.edgeId = e.id;
+    const isSel = selection && selection.kind === "edge" && selection.id === e.id;
+    const visible = svg("path", {
+      class: "edge" + (isSel ? " selected" : ""),
+      d: path,
+      "marker-end": isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)"
+    });
+    g.appendChild(hit);
+    g.appendChild(visible);
+    if (e.label) {
+      const mid = pathMidpoint(src, dst);
+      const text = svg("text", { class: "edge-label", x: mid.x, y: mid.y });
+      text.textContent = e.label;
+      g.appendChild(text);
+    }
+    edgesLayer.appendChild(g);
+  }
+
+  nodesLayer.innerHTML = "";
+  for (const n of state.nodes) {
+    nodesLayer.appendChild(renderNode(n));
+  }
+
+  viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+  renderInspector();
+  renderJson();
+}
+
+function renderNode(n) {
+  const meta = SERVICE_META[n.type] || { label: n.type, color: "#888" };
+  const isSel = selection && selection.kind === "node" && selection.id === n.id;
+  const g = svg("g", {
+    class: "node-group" + (isSel ? " selected" : ""),
+    transform: `translate(${n.x} ${n.y})`
+  });
+  g.dataset.nodeId = n.id;
+
+  g.appendChild(svg("rect", { class: "node-rect", x: 0, y: 0, width: NODE_W, height: NODE_H, rx: 4 }));
+  g.appendChild(svg("rect", { x: 0, y: 0, width: 4, height: NODE_H, fill: meta.color, rx: 4 }));
+
+  const title = svg("text", { class: "node-title", x: 12, y: 22 });
+  title.textContent = n.label || meta.label;
+  g.appendChild(title);
+
+  const sub = svg("text", { class: "node-sub", x: 12, y: 40 });
+  sub.textContent = meta.label.toLowerCase();
+  g.appendChild(sub);
+
+  const port = svg("circle", { class: "node-port", cx: NODE_W, cy: NODE_H / 2, r: 5 });
+  port.dataset.nodeId = n.id;
+  port.dataset.role = "port";
+  g.appendChild(port);
+
+  return g;
+}
+
+function edgePath(src, dst) {
+  const x1 = src.x + NODE_W, y1 = src.y + NODE_H / 2;
+  const x2 = dst.x,          y2 = dst.y + NODE_H / 2;
+  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
+  return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+}
+
+function pathMidpoint(src, dst) {
+  const x1 = src.x + NODE_W, y1 = src.y + NODE_H / 2;
+  const x2 = dst.x,          y2 = dst.y + NODE_H / 2;
+  return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4 };
+}
+
+function svg(name, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function renderInspector() {
+  inspector.innerHTML = "<h3>Inspector</h3>";
+  if (!selection) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Select a node or edge to edit its properties.";
+    inspector.appendChild(empty);
+    return;
+  }
+
+  if (selection.kind === "node") {
+    const n = state.nodes.find(x => x.id === selection.id);
+    if (!n) { selection = null; return renderInspector(); }
+
+    inspector.appendChild(field("ID", n.id, null, true));
+    inspector.appendChild(field("Service", SERVICE_META[n.type] ? SERVICE_META[n.type].label : n.type, null, true));
+    inspector.appendChild(field("Label", n.label || "", v => { n.label = v; render(); }));
+
+    const propsField = document.createElement("div");
+    propsField.className = "field";
+    const propsLbl = document.createElement("label");
+    propsLbl.textContent = "Properties (JSON)";
+    const propsTa = document.createElement("textarea");
+    propsTa.value = JSON.stringify(n.props || {}, null, 2);
+    propsTa.addEventListener("change", () => {
+      try {
+        n.props = JSON.parse(propsTa.value);
+        render();
+      } catch (e) {
+        alert("Invalid JSON: " + e.message);
+        propsTa.value = JSON.stringify(n.props || {}, null, 2);
+      }
+    });
+    propsField.appendChild(propsLbl);
+    propsField.appendChild(propsTa);
+    inspector.appendChild(propsField);
+
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.textContent = "Delete node";
+    del.addEventListener("click", () => deleteNode(n.id));
+    inspector.appendChild(del);
+  }
+
+  if (selection.kind === "edge") {
+    const e = state.edges.find(x => x.id === selection.id);
+    if (!e) { selection = null; return renderInspector(); }
+    inspector.appendChild(field("ID", e.id, null, true));
+    inspector.appendChild(field("From", e.from, null, true));
+    inspector.appendChild(field("To", e.to, null, true));
+    inspector.appendChild(field("Label", e.label || "", v => { e.label = v; render(); }));
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.textContent = "Delete edge";
+    del.addEventListener("click", () => deleteEdge(e.id));
+    inspector.appendChild(del);
+  }
+}
+
+function field(label, value, onChange, readonly) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const lbl = document.createElement("label");
+  lbl.textContent = label;
+  const input = document.createElement("input");
+  input.value = value;
+  if (readonly) input.disabled = true;
+  if (onChange) input.addEventListener("change", e => onChange(e.target.value));
+  wrap.appendChild(lbl);
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function renderJson() {
+  const json = JSON.stringify(state, null, 2);
+  jsonView.innerHTML = syntaxHighlight(json);
+  jsonInfo.textContent = state.nodes.length + " node" + (state.nodes.length === 1 ? "" : "s") + ", " + state.edges.length + " edge" + (state.edges.length === 1 ? "" : "s");
+  fileNameEl.textContent = fileName;
+}
+
+function syntaxHighlight(json) {
+  return json
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/("(?:\\.|[^"\\])*")(\s*:)/g, '<span class="key">$1</span>$2')
+    .replace(/:\s*("(?:\\.|[^"\\])*")/g, ': <span class="str">$1</span>')
+    .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="num">$1</span>');
+}
+
+function addNode(type, x, y) {
+  const meta = SERVICE_META[type];
+  const n = {
+    id: uid("n"),
+    type,
+    label: meta ? meta.label : type,
+    x: Math.round(x / 10) * 10,
+    y: Math.round(y / 10) * 10,
+    props: meta && meta.defaults ? Object.assign({}, meta.defaults) : {}
+  };
+  state.nodes.push(n);
+  selection = { kind: "node", id: n.id };
+  render();
+}
+
+function addEdge(from, to) {
+  if (from === to) return;
+  const e = { id: uid("e"), from, to, label: "" };
+  state.edges.push(e);
+  selection = { kind: "edge", id: e.id };
+  render();
+}
+
+function deleteNode(id) {
+  state.nodes = state.nodes.filter(n => n.id !== id);
+  state.edges = state.edges.filter(e => e.from !== id && e.to !== id);
+  selection = null;
+  render();
+}
+
+function deleteEdge(id) {
+  state.edges = state.edges.filter(e => e.id !== id);
+  selection = null;
+  render();
+}
+
+let drag = null;
+
+document.querySelectorAll(".palette-item").forEach(item => {
+  item.addEventListener("dragstart", e => {
+    e.dataTransfer.setData("text/aws-type", item.dataset.type);
+    e.dataTransfer.effectAllowed = "copy";
+  });
+});
+
+canvas.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+canvas.addEventListener("drop", e => {
+  e.preventDefault();
+  const type = e.dataTransfer.getData("text/aws-type");
+  if (!type) return;
+  const pt = clientToWorld(e.clientX, e.clientY);
+  addNode(type, pt.x - NODE_W / 2, pt.y - NODE_H / 2);
+});
+
+canvas.addEventListener("mousedown", e => {
+  const target = e.target;
+
+  if (target.dataset && target.dataset.role === "port") {
+    const fromId = target.dataset.nodeId;
+    const fromNode = state.nodes.find(n => n.id === fromId);
+    const pt = clientToWorld(e.clientX, e.clientY);
+    drag = { kind: "edge-draw", fromId };
+    edgePreview.style.display = "";
+    updateEdgePreview(fromNode, pt);
+    e.preventDefault();
+    return;
+  }
+
+  const nodeGroup = target.closest(".node-group");
+  if (nodeGroup) {
+    const id = nodeGroup.dataset.nodeId;
+    selection = { kind: "node", id };
+    render();
+    const n = state.nodes.find(x => x.id === id);
+    const pt = clientToWorld(e.clientX, e.clientY);
+    drag = { kind: "node-move", id, offsetX: pt.x - n.x, offsetY: pt.y - n.y };
+    return;
+  }
+
+  if (target.classList.contains("edge-hit")) {
+    selection = { kind: "edge", id: target.dataset.edgeId };
+    render();
+    return;
+  }
+
+  if (target === canvas) {
+    selection = null;
+    render();
+    drag = { kind: "pan", startX: e.clientX, startY: e.clientY, vx: viewport.x, vy: viewport.y };
+    canvas.classList.add("panning");
+  }
+});
+
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  if (drag.kind === "node-move") {
+    const pt = clientToWorld(e.clientX, e.clientY);
+    const n = state.nodes.find(x => x.id === drag.id);
+    n.x = Math.round((pt.x - drag.offsetX) / 10) * 10;
+    n.y = Math.round((pt.y - drag.offsetY) / 10) * 10;
+    render();
+  } else if (drag.kind === "pan") {
+    viewport.x = drag.vx + (e.clientX - drag.startX);
+    viewport.y = drag.vy + (e.clientY - drag.startY);
+    viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+  } else if (drag.kind === "edge-draw") {
+    const pt = clientToWorld(e.clientX, e.clientY);
+    const fromNode = state.nodes.find(n => n.id === drag.fromId);
+    updateEdgePreview(fromNode, pt);
+  }
+});
+
+window.addEventListener("mouseup", e => {
+  if (!drag) return;
+  if (drag.kind === "edge-draw") {
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const nodeGroup = target && target.closest ? target.closest(".node-group") : null;
+    if (nodeGroup) {
+      const toId = nodeGroup.dataset.nodeId;
+      if (toId !== drag.fromId) addEdge(drag.fromId, toId);
+    }
+    edgePreview.style.display = "none";
+  }
+  canvas.classList.remove("panning");
+  drag = null;
+});
+
+function updateEdgePreview(fromNode, worldPt) {
+  const x1 = fromNode.x + NODE_W, y1 = fromNode.y + NODE_H / 2;
+  const x2 = worldPt.x, y2 = worldPt.y;
+  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
+  edgePreview.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+}
+
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const delta = -e.deltaY * 0.001;
+  const newZ = Math.min(3, Math.max(0.3, viewport.z * (1 + delta)));
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const worldBefore = { x: (cx - viewport.x) / viewport.z, y: (cy - viewport.y) / viewport.z };
+  viewport.z = newZ;
+  viewport.x = cx - worldBefore.x * newZ;
+  viewport.y = cy - worldBefore.y * newZ;
+  viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+}, { passive: false });
+
+window.addEventListener("keydown", e => {
+  if (e.key === "Delete" || e.key === "Backspace") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (!selection) return;
+    if (selection.kind === "node") deleteNode(selection.id);
+    if (selection.kind === "edge") deleteEdge(selection.id);
+  }
+});
+
+function clientToWorld(cx, cy) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (cx - rect.left - viewport.x) / viewport.z,
+    y: (cy - rect.top - viewport.y) / viewport.z
+  };
+}
+
+document.getElementById("btnNew").addEventListener("click", () => {
+  if (state.nodes.length && !confirm("Discard current diagram?")) return;
+  state = freshState();
+  selection = null;
+  fileName = "untitled.arch.json";
+  render();
+});
+
+document.getElementById("btnSave").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById("btnOpen").addEventListener("click", () => {
+  document.getElementById("fileInput").click();
+});
+
+document.getElementById("fileInput").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed.nodes || !parsed.edges) throw new Error("Missing nodes or edges");
+    state = parsed;
+    fileName = file.name;
+    selection = null;
+    render();
+  } catch (err) {
+    alert("Failed to open: " + err.message);
+  }
+  e.target.value = "";
+});
+
+document.getElementById("btnExportMmd").addEventListener("click", () => {
+  const mmd = toMermaid(state);
+  navigator.clipboard.writeText(mmd).then(() => {
+    const btn = document.getElementById("btnExportMmd");
+    const orig = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => btn.textContent = orig, 1200);
+  });
+});
+
+function toMermaid(s) {
+  const lines = ["flowchart LR"];
+  for (const n of s.nodes) {
+    const meta = SERVICE_META[n.type] || { label: n.type };
+    const label = (n.label || meta.label).replace(/"/g, "'");
+    lines.push("  " + n.id + '["' + label + '<br><small>' + meta.label + '</small>"]');
+  }
+  for (const e of s.edges) {
+    const lbl = e.label ? "|" + e.label + "|" : "";
+    lines.push("  " + e.from + " -->" + lbl + " " + e.to);
+  }
+  return lines.join("\n");
+}
+
+render();
+</script>
+</body>
+</html>
