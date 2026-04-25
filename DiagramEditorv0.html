@@ -841,7 +841,8 @@ function render() {
     const src = state.nodes.find(n => n.id === e.from);
     const dst = state.nodes.find(n => n.id === e.to);
     if (!src || !dst) continue;
-    const path = edgePath(src, dst);
+    const offset = edgePerpOffset(e);
+    const path = edgePath(src, dst, offset);
     const g = svg("g");
     const hit = svg("path", { class: "edge-hit", d: path });
     hit.dataset.edgeId = e.id;
@@ -856,7 +857,7 @@ function render() {
     g.appendChild(visible);
     g.addEventListener("dblclick", ev => {
       ev.stopPropagation();
-      const mid = pathMidpoint(src, dst);
+      const mid = pathMidpoint(src, dst, offset);
       startEdgeEdit(e, mid.x, mid.y);
     });
     edgesLayer.appendChild(g);
@@ -873,7 +874,7 @@ function render() {
     const src = state.nodes.find(n => n.id === e.from);
     const dst = state.nodes.find(n => n.id === e.to);
     if (!src || !dst) continue;
-    const mid = pathMidpoint(src, dst);
+    const mid = pathMidpoint(src, dst, edgePerpOffset(e));
     const lw = measureEdgeLabelWidth(e.label);
     const padX = 7, rh = 18;
     const rw = lw + padX * 2;
@@ -928,40 +929,57 @@ function renderNode(n) {
   return g;
 }
 
-function getBestPorts(src, dst) {
+const BIDIR_OFFSET = 9;
+
+function edgePerpOffset(e) {
+  const hasPair = state.edges.some(o => o.from === e.to && o.to === e.from);
+  if (!hasPair) return 0;
+  return e.from < e.to ? -BIDIR_OFFSET : BIDIR_OFFSET;
+}
+
+// Returns port positions + cubic bezier control points.
+// perpOffset shifts the path perpendicular to its direction (for bidirectional pairs).
+function getBestPorts(src, dst, perpOffset = 0) {
   const srcW = nodeWidth(src), dstW = nodeWidth(dst);
   const srcCx = src.x + srcW / 2, srcCy = src.y + NODE_H / 2;
   const dstCx = dst.x + dstW / 2, dstCy = dst.y + NODE_H / 2;
   const dx = dstCx - srcCx, dy = dstCy - srcCy;
+  let p;
   if (Math.abs(dx) >= Math.abs(dy)) {
-    return dx >= 0
-      ? { sx: src.x + srcW, sy: srcCy, tx: dst.x,         ty: dstCy, horiz: true,  dir: 1  }
-      : { sx: src.x,        sy: srcCy, tx: dst.x + dstW,  ty: dstCy, horiz: true,  dir: -1 };
+    p = dx >= 0
+      ? { sx: src.x + srcW, sy: srcCy, tx: dst.x,        ty: dstCy, horiz: true,  dir: 1  }
+      : { sx: src.x,        sy: srcCy, tx: dst.x + dstW, ty: dstCy, horiz: true,  dir: -1 };
+    p.sy += perpOffset; p.ty += perpOffset;
   } else {
-    return dy >= 0
+    p = dy >= 0
       ? { sx: srcCx, sy: src.y + NODE_H, tx: dstCx, ty: dst.y,          horiz: false, dir: 1  }
       : { sx: srcCx, sy: src.y,          tx: dstCx, ty: dst.y + NODE_H, horiz: false, dir: -1 };
+    p.sx += perpOffset; p.tx += perpOffset;
   }
-}
-
-function edgePath(src, dst) {
-  const p = getBestPorts(src, dst);
-  let cp1x, cp1y, cp2x, cp2y;
   if (p.horiz) {
     const off = Math.max(40, Math.abs(p.tx - p.sx) * 0.5);
-    cp1x = p.sx + p.dir * off; cp1y = p.sy;
-    cp2x = p.tx - p.dir * off; cp2y = p.ty;
+    p.cp1x = p.sx + p.dir * off; p.cp1y = p.sy;
+    p.cp2x = p.tx - p.dir * off; p.cp2y = p.ty;
   } else {
     const off = Math.max(40, Math.abs(p.ty - p.sy) * 0.5);
-    cp1x = p.sx; cp1y = p.sy + p.dir * off;
-    cp2x = p.tx; cp2y = p.ty - p.dir * off;
+    p.cp1x = p.sx; p.cp1y = p.sy + p.dir * off;
+    p.cp2x = p.tx; p.cp2y = p.ty - p.dir * off;
   }
-  return `M${p.sx},${p.sy} C${cp1x},${cp1y} ${cp2x},${cp2y} ${p.tx},${p.ty}`;
+  return p;
 }
 
-function pathMidpoint(src, dst) {
-  const p = getBestPorts(src, dst);
-  return { x: (p.sx + p.tx) / 2, y: (p.sy + p.ty) / 2 - 8 };
+function edgePath(src, dst, perpOffset = 0) {
+  const p = getBestPorts(src, dst, perpOffset);
+  return `M${p.sx},${p.sy} C${p.cp1x},${p.cp1y} ${p.cp2x},${p.cp2y} ${p.tx},${p.ty}`;
+}
+
+// Actual bezier midpoint at t=0.5: B(t) = 0.125*P0 + 0.375*P1 + 0.375*P2 + 0.125*P3
+function pathMidpoint(src, dst, perpOffset = 0) {
+  const p = getBestPorts(src, dst, perpOffset);
+  return {
+    x: 0.125 * p.sx + 0.375 * p.cp1x + 0.375 * p.cp2x + 0.125 * p.tx,
+    y: 0.125 * p.sy + 0.375 * p.cp1y + 0.375 * p.cp2y + 0.125 * p.ty,
+  };
 }
 
 function applySelection(kind, id) {
