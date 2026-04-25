@@ -24,7 +24,7 @@
   .app {
     display: grid;
     grid-template-columns: 180px 1fr 280px;
-    grid-template-rows: 44px 1fr 200px;
+    grid-template-rows: 44px 1fr 5px 200px;
     height: 100vh;
     gap: 1px;
     background: var(--line);
@@ -184,6 +184,16 @@
   }
   .inspector .danger:hover { background: #fcebeb; }
 
+  .json-resize-handle {
+    grid-column: 1 / -1;
+    height: 5px;
+    cursor: ns-resize;
+    background: var(--line);
+    flex-shrink: 0;
+    transition: background 0.15s;
+    z-index: 10;
+  }
+  .json-resize-handle:hover, .json-resize-handle.dragging { background: var(--sel); }
   .json-pane {
     grid-column: 1 / -1;
     background: var(--surface);
@@ -548,16 +558,15 @@
     <div class="empty">Select a node or edge to edit its properties.</div>
   </div>
 
+  <div class="json-resize-handle" id="jsonResizeHandle"></div>
   <div class="json-pane">
     <div class="json-head">
       <h3>Diagram JSON</h3>
       <span class="info" id="jsonInfo">0 nodes, 0 edges</span>
       <span id="jsonFilePath" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;"></span>
-      <button id="btnJsonToggle" style="margin-left:auto;padding:2px 8px;font-size:11px;border:1px solid var(--line);background:var(--bg);border-radius:3px;cursor:pointer;">Edit</button>
-      <button id="btnJsonApply" style="display:none;padding:2px 8px;font-size:11px;border:1px solid var(--sel);background:var(--sel);color:#fff;border-radius:3px;cursor:pointer;margin-left:4px;">Apply</button>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto;">Edit then Cmd+S to apply</span>
     </div>
-    <pre id="jsonView" style="flex:1;overflow:auto;"></pre>
-    <textarea id="jsonEdit" style="display:none;flex:1;margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--ink);border:none;outline:none;resize:none;background:var(--surface);overflow:auto;" spellcheck="false"></textarea>
+    <textarea id="jsonEdit" style="flex:1;margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--ink);border:none;outline:none;resize:none;background:var(--surface);overflow:auto;" spellcheck="false"></textarea>
   </div>
 </div>
 
@@ -862,29 +871,6 @@ async function _connectFile() {
 }
 
 // ── JSON editor (bottom pane) ─────────────────────────────────────────────
-let _jsonEditMode = false;
-
-function _toggleJsonEdit() {
-  _jsonEditMode = !_jsonEditMode;
-  const view  = document.getElementById("jsonView");
-  const edit  = document.getElementById("jsonEdit");
-  const apply = document.getElementById("btnJsonApply");
-  const tog   = document.getElementById("btnJsonToggle");
-  if (_jsonEditMode) {
-    edit.value = JSON.stringify(state, null, 2);
-    view.style.display = "none";
-    edit.style.display = "";
-    apply.style.display = "";
-    tog.textContent = "View";
-    edit.focus();
-  } else {
-    view.style.display = "";
-    edit.style.display = "none";
-    apply.style.display = "none";
-    tog.textContent = "Edit";
-  }
-}
-
 function _applyJsonEdit() {
   const ta = document.getElementById("jsonEdit");
   try {
@@ -893,11 +879,6 @@ function _applyJsonEdit() {
       throw new Error("Top-level 'nodes' and 'edges' arrays are required.");
     state = parsed;
     selection = null;
-    _jsonEditMode = false;
-    document.getElementById("jsonView").style.display = "";
-    document.getElementById("jsonEdit").style.display = "none";
-    document.getElementById("btnJsonApply").style.display = "none";
-    document.getElementById("btnJsonToggle").textContent = "Edit";
     render();
   } catch (e) {
     alert("Invalid JSON: " + e.message);
@@ -939,7 +920,6 @@ const edgeLabelsLayer = document.getElementById("edgeLabels");
 const viewportG = document.getElementById("viewport");
 const edgePreview = document.getElementById("edgePreview");
 const inspector = document.getElementById("inspector");
-const jsonView = document.getElementById("jsonView");
 const jsonInfo = document.getElementById("jsonInfo");
 const fileNameEl = document.getElementById("fileName");
 
@@ -1251,19 +1231,14 @@ function textareaField(label, value, onChange, rows) {
 
 function renderJson() {
   const json = JSON.stringify(state, null, 2);
-  if (!_jsonEditMode) jsonView.innerHTML = syntaxHighlight(json);
+  const ta = document.getElementById("jsonEdit");
+  if (document.activeElement !== ta) ta.value = json;
   jsonInfo.textContent = state.nodes.length + " node" + (state.nodes.length === 1 ? "" : "s") + ", " + state.edges.length + " edge" + (state.edges.length === 1 ? "" : "s");
   fileNameEl.textContent = fileName;
   _scheduleSave();
 }
 
-function syntaxHighlight(json) {
-  return json
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/("(?:\\.|[^"\\])*")(\s*:)/g, '<span class="key">$1</span>$2')
-    .replace(/:\s*("(?:\\.|[^"\\])*")/g, ': <span class="str">$1</span>')
-    .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="num">$1</span>');
-}
+
 
 function addNode(type, x, y) {
   const meta    = SERVICE_META[type] || { label: type };
@@ -1534,12 +1509,17 @@ document.getElementById("btnSave").addEventListener("click", () => {
 });
 
 document.getElementById("btnConnect").addEventListener("click", _connectFile);
-document.getElementById("btnJsonToggle").addEventListener("click", _toggleJsonEdit);
-document.getElementById("btnJsonApply").addEventListener("click", _applyJsonEdit);
 
-// Ctrl+Enter in JSON editor applies changes
-document.getElementById("jsonEdit").addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _applyJsonEdit(); }
+// Cmd/Ctrl+S: apply JSON edits and save
+window.addEventListener("keydown", e => {
+  if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    if (document.activeElement === document.getElementById("jsonEdit")) {
+      _applyJsonEdit();
+    } else {
+      _doSave();
+    }
+  }
 });
 
 document.getElementById("btnOpen").addEventListener("click", () => {
@@ -1593,6 +1573,37 @@ render();
 if (__STATE_JSON_PATH__) {
   document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
   document.getElementById("saveStatus").title = "Auto-save target: " + __STATE_JSON_PATH__;
+}
+
+// ── JSON pane resize ─────────────────────────────────────────────────────────
+{
+  const appEl  = document.querySelector(".app");
+  const handle = document.getElementById("jsonResizeHandle");
+  let resizing = false, startY = 0, startH = 0;
+
+  handle.addEventListener("mousedown", e => {
+    resizing = true;
+    startY   = e.clientY;
+    startH   = document.querySelector(".json-pane").offsetHeight;
+    handle.classList.add("dragging");
+    document.body.style.cursor    = "ns-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", e => {
+    if (!resizing) return;
+    const newH = Math.max(40, Math.min(window.innerHeight - 150, startH + (startY - e.clientY)));
+    appEl.style.gridTemplateRows = `44px 1fr 5px ${newH}px`;
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove("dragging");
+    document.body.style.cursor     = "";
+    document.body.style.userSelect = "";
+  });
 }
 
 // ── AI Chat ──────────────────────────────────────────────────────────────────
