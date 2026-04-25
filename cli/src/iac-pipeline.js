@@ -65,7 +65,8 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
     console.log(`\nTo deploy later:`);
     console.log(`  cd ${cdkOutputDir}`);
     console.log(`  npm install && npm run build`);
-    console.log(`  cdk deploy\n`);
+    console.log(`  cdk deploy`);
+    console.log(`\nTo tear down after a deploy, from repo root: infra-decommission\n`);
     return true;
   }
 
@@ -161,7 +162,9 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
     console.log(`  cd ${cdkOutputDir}`);
     console.log(`  cdk diff     # See changes`);
     console.log(`  cdk deploy   # Deploy updates`);
-    console.log(`  cdk destroy  # Tear down stack\n`);
+    console.log("\nTo remove everything from AWS later (from this repo root):");
+    console.log(`  infra-decommission`);
+    console.log(`  # same as: cd ${cdkOutputDir} && npx cdk destroy --all --force\n`);
     return true;
   }
 

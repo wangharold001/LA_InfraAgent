@@ -61,12 +61,12 @@ function preflight() {
   return { ok: true };
 }
 
-function openTranscript(cdkDir) {
+function openTranscript(cdkDir, kind = "deploy") {
   const dir = path.join(cdkDir, ".infra-agent");
   fs.mkdirSync(dir, { recursive: true });
-  const transcriptPath = path.join(dir, `deploy-${Date.now()}.log`);
+  const transcriptPath = path.join(dir, `${kind}-${Date.now()}.log`);
   const stream = fs.createWriteStream(transcriptPath, { flags: "a" });
-  stream.write(`# infra-agent deploy transcript\n# started: ${new Date().toISOString()}\n\n`);
+  stream.write(`# infra-agent ${kind} transcript\n# started: ${new Date().toISOString()}\n\n`);
   return { stream, transcriptPath };
 }
 
@@ -110,7 +110,7 @@ export async function runDeploy(cdkDir, metadata, opts = {}) {
     return pre;
   }
 
-  const { stream: transcript, transcriptPath } = openTranscript(cdkDir);
+  const { stream: transcript, transcriptPath } = openTranscript(cdkDir, "deploy");
   const env = { ...process.env };
 
   const steps = [
@@ -182,6 +182,82 @@ export async function runDeploy(cdkDir, metadata, opts = {}) {
   transcript.end();
 
   return { ok: true, phase: "complete", transcriptPath, outputs };
+}
+
+// =============================================================================
+// runDecommission — tear down every stack in the CDK app (non-interactive)
+// =============================================================================
+
+/**
+ * Run install → build → cdk destroy --all --force.
+ * Destroys all stacks defined in the app (same scope as a full deploy).
+ *
+ * @param {string} cdkDir
+ * @param {object} [metadata]
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   phase: string,
+ *   command?: string,
+ *   exitCode?: number,
+ *   stdout?: string,
+ *   stderr?: string,
+ *   transcriptPath?: string,
+ *   error?: string,
+ * }>}
+ */
+export async function runDecommission(cdkDir, metadata = {}) {
+  console.log("\n" + "=".repeat(80));
+  console.log("🧨 CDK DECOMMISSION (destroy all stacks in this app)");
+  console.log("=".repeat(80));
+
+  console.log("\n🔍 Checking CDK CLI and AWS credentials...");
+  const pre = preflight();
+  if (!pre.ok) {
+    console.error(`\n❌ ${pre.error}`);
+    return pre;
+  }
+
+  const { stream: transcript, transcriptPath } = openTranscript(cdkDir, "destroy");
+  const env = { ...process.env };
+  if (metadata.region) env.AWS_DEFAULT_REGION = metadata.region;
+
+  const steps = [
+    { phase: "install", label: "📦 Installing dependencies...", cmd: "npm", args: ["install"] },
+    { phase: "build", label: "🔨 Building TypeScript...", cmd: "npm", args: ["run", "build"] },
+    {
+      phase: "destroy",
+      label: "🧨 Destroying all stacks (this may take several minutes)...",
+      cmd: "npx",
+      args: ["cdk", "destroy", "--all", "--force"],
+    },
+  ];
+
+  for (const step of steps) {
+    console.log(`\n${step.label}`);
+    transcript.write(`\n\n## ${step.phase}: ${step.cmd} ${step.args.join(" ")}\n\n`);
+    const res = await spawnAndTee(step.cmd, step.args, { cwd: cdkDir, env }, transcript);
+    const successCodes = step.successExitCodes || [0];
+    if (!successCodes.includes(res.exitCode)) {
+      transcript.end();
+      return {
+        ok: false,
+        phase: step.phase,
+        command: `${step.cmd} ${step.args.join(" ")}`,
+        exitCode: res.exitCode,
+        stdout: res.stdout,
+        stderr: res.stderr,
+        transcriptPath,
+        error: res.error,
+      };
+    }
+    console.log(`   ✓ ${step.phase} completed`);
+  }
+
+  console.log("\n✅ Decommission completed — stacks removed from AWS (subject to removal policies).");
+  transcript.write(`\n\n# completed: ${new Date().toISOString()}\n`);
+  transcript.end();
+
+  return { ok: true, phase: "complete", transcriptPath };
 }
 
 // =============================================================================
@@ -273,6 +349,22 @@ AWS CDK Infrastructure for ${metadata.name}
    cdk deploy
    \`\`\`
 
+## Decommission (remove from AWS)
+
+From the parent directory (where \`cdk-infrastructure/\` lives), if you installed the CLI globally:
+
+\`\`\`bash
+infra-decommission
+\`\`\`
+
+Or from this folder:
+
+\`\`\`bash
+cdk destroy --all --force
+\`\`\`
+
+Resources with \`RemovalPolicy.RETAIN\` (or similar) may leave buckets or other assets in your account until you delete them manually.
+
 ## Useful Commands
 
 - \`npm run build\` - compile TypeScript to JavaScript
@@ -280,7 +372,7 @@ AWS CDK Infrastructure for ${metadata.name}
 - \`cdk synth\` - synthesize CloudFormation template
 - \`cdk diff\` - compare deployed stack with current state
 - \`cdk deploy\` - deploy this stack to AWS
-- \`cdk destroy\` - remove this stack from AWS
+- \`cdk destroy --all --force\` - remove all stacks in this app from AWS (non-interactive)
 
 ## Architecture
 

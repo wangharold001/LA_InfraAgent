@@ -5,6 +5,7 @@
   "type": "module",
   "bin": {
     "infra-agent": "./bin/infra-agent.js",
+    "infra-decommission": "./bin/infra-decommission.js",
     "diagram": "./bin/diagram.js"
   },
   "files": [
