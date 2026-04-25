@@ -408,10 +408,8 @@
     <button id="btnNew">New</button>
     <button id="btnChatAI" style="background:#378add;color:#fff;border-color:#2b6fc0;font-weight:500;">Chat with AI</button>
     <button id="btnOpen">Open</button>
-    <button id="btnSave">Save JSON</button>
-    <button id="btnConnect" title="Connect to a local file for auto-save">Connect file</button>
+    <button id="btnCopyJson">Copy JSON</button>
     <span id="saveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;" title="Auto-save status">auto-save off</span>
-    <button id="btnExportMmd">Copy as Mermaid</button>
     <input type="file" id="fileInput" accept=".json" style="display:none">
   </div>
 
@@ -822,9 +820,8 @@ let selection = null;
 let viewport = { x: 0, y: 0, z: 1 };
 let fileName = "untitled.arch.json";
 
-// ── Auto-save ─────────────────────────────────────────────────────────────
-let _fileHandle = null;
-let _saveTimer  = null;
+// ── Auto-save (CLI server mode) ───────────────────────────────────────────
+let _saveTimer = null;
 
 function _scheduleSave() {
   clearTimeout(_saveTimer);
@@ -832,65 +829,19 @@ function _scheduleSave() {
 }
 
 async function _doSave() {
+  if (!__SERVER_PORT__) return;
   const el = document.getElementById("saveStatus");
-  const json = JSON.stringify(state, null, 2);
-
-  // Prefer local server (CLI mode) — no file picker needed
-  if (__SERVER_PORT__) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${__SERVER_PORT__}/state`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      });
-      if (res.ok) {
-        el.textContent = "✓ saved";
-        el.style.color = "#1d9e75";
-      } else {
-        el.textContent = "⚠ save failed";
-        el.style.color = "#d85a30";
-      }
-    } catch {
-      el.textContent = "⚠ server unreachable";
-      el.style.color = "#d85a30";
-    }
-    return;
-  }
-
-  // Fallback: File System Access API (works on localhost / https)
-  if (!_fileHandle) return;
   try {
-    const writable = await _fileHandle.createWritable();
-    await writable.write(json);
-    await writable.close();
-    el.textContent = "✓ " + _fileHandle.name;
-    el.style.color = "#1d9e75";
-  } catch {
-    el.textContent = "⚠ save failed";
-    el.style.color = "#d85a30";
-  }
-}
-
-async function _connectFile() {
-  if (!window.showSaveFilePicker) {
-    alert("File System Access API not available. Run via the CLI for automatic saving.");
-    return;
-  }
-  const suggested = __STATE_JSON_PATH__
-    ? __STATE_JSON_PATH__.split(/[\\/]/).pop()
-    : (fileName.replace(/\.(html|json)$/, "") + ".state.json");
-  try {
-    _fileHandle = await window.showSaveFilePicker({
-      suggestedName: suggested,
-      types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+    const res = await fetch(`http://127.0.0.1:${__SERVER_PORT__}/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state, null, 2),
     });
-    const el = document.getElementById("saveStatus");
-    el.textContent = "⟳ " + _fileHandle.name;
-    el.style.color = "var(--muted)";
-    if (__STATE_JSON_PATH__) document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
-    _scheduleSave();
-  } catch (e) {
-    if (e.name !== "AbortError") console.error("File connect failed:", e);
+    el.textContent = res.ok ? "✓ saved" : "⚠ save failed";
+    el.style.color  = res.ok ? "#1d9e75" : "#d85a30";
+  } catch {
+    el.textContent = "⚠ server unreachable";
+    el.style.color  = "#d85a30";
   }
 }
 
@@ -1522,53 +1473,19 @@ document.getElementById("btnNew").addEventListener("click", () => {
   render();
 });
 
-document.getElementById("btnSave").addEventListener("click", async () => {
-  if (_fileHandle) {
-    // Already connected — just save
-    await _doSave();
-    return;
-  }
-  if (window.showSaveFilePicker) {
-    // Use File System Access API so the file lands at the right path
-    const suggested = __STATE_JSON_PATH__
-      ? __STATE_JSON_PATH__.split(/[\\/]/).pop()
-      : fileName.replace(/\.html$/, ".json");
-    try {
-      _fileHandle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
-      });
-      const el = document.getElementById("saveStatus");
-      el.textContent = "⟳ " + _fileHandle.name;
-      el.style.color = "var(--muted)";
-      if (__STATE_JSON_PATH__) document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
-      await _doSave();
-    } catch (e) {
-      if (e.name !== "AbortError") console.error(e);
-    }
-  } else {
-    // Fallback: download
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName.replace(/\.html$/, ".json");
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+document.getElementById("btnCopyJson").addEventListener("click", () => {
+  const btn = document.getElementById("btnCopyJson");
+  navigator.clipboard.writeText(JSON.stringify(state, null, 2)).then(() => {
+    btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = "Copy JSON", 1200);
+  });
 });
 
-document.getElementById("btnConnect").addEventListener("click", _connectFile);
-
-// Cmd/Ctrl+S: apply JSON edits and save
+// Cmd/Ctrl+S: apply JSON edits when textarea focused
 window.addEventListener("keydown", e => {
   if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
-    if (document.activeElement === document.getElementById("jsonEdit")) {
-      _applyJsonEdit();
-    } else {
-      _doSave();
-    }
+    if (document.activeElement === document.getElementById("jsonEdit")) _applyJsonEdit();
   }
 });
 
@@ -1592,30 +1509,6 @@ document.getElementById("fileInput").addEventListener("change", async e => {
   }
   e.target.value = "";
 });
-
-document.getElementById("btnExportMmd").addEventListener("click", () => {
-  const mmd = toMermaid(state);
-  navigator.clipboard.writeText(mmd).then(() => {
-    const btn = document.getElementById("btnExportMmd");
-    const orig = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => btn.textContent = orig, 1200);
-  });
-});
-
-function toMermaid(s) {
-  const lines = ["flowchart LR"];
-  for (const n of s.nodes) {
-    const meta = SERVICE_META[n.type] || { label: n.type };
-    const label = (n.label || meta.label).replace(/"/g, "'");
-    lines.push("  " + n.id + '["' + label + '<br><small>' + meta.label + '</small>"]');
-  }
-  for (const e of s.edges) {
-    const lbl = e.label ? "|" + e.label + "|" : "";
-    lines.push("  " + e.from + " -->" + lbl + " " + e.to);
-  }
-  return lines.join("\n");
-}
 
 render();
 
