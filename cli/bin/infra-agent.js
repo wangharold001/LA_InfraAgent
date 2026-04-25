@@ -5,9 +5,7 @@ import readline from "readline/promises";
 import { readRepo } from "../src/reader.js";
 import { runAgent, MODE_PROMPTS } from "../src/agent.js";
 import { writeAndOpen } from "../src/renderer.js";
-import { getApproval } from "../src/approval.js";
-import { generateCDKCode } from "../src/cdk-generator.js";
-import { deployCDK, generateReadme } from "../src/deployer.js";
+import { runIaCPipeline } from "../src/iac-pipeline.js";
 
 const repoRoot = path.resolve(process.argv[2] || process.cwd());
 const outputPath = path.join(repoRoot, "infra-diagram.html");
@@ -93,80 +91,4 @@ if (fs.existsSync(stateJsonPath)) {
   console.log("ℹ️  No saved state file found — using original generated diagram.");
 }
 
-// ============================================================================
-// PHASE 2: User Approval
-// ============================================================================
-console.log("\n📍 PHASE 2: Review & Approval\n");
-
-const approved = await getApproval(finalState);
-
-if (!approved) {
-  console.log("\n⏸️  Process stopped. You can:");
-  console.log(`   - Review the diagram: ${diagramPath}`);
-  console.log(`   - Edit it manually in the browser`);
-  console.log(`   - Re-run this tool with a different prompt\n`);
-  process.exit(0);
-}
-
-// ============================================================================
-// PHASE 3: CDK Code Generation
-// ============================================================================
-console.log("\n📍 PHASE 3: CDK Code Generation\n");
-
-try {
-  const generatedFiles = await generateCDKCode(finalState, cdkOutputDir, apiKey);
-
-  console.log(`\n✅ Generated ${generatedFiles.length} CDK files:`);
-  for (const file of generatedFiles) {
-    console.log(`   - ${file}`);
-  }
-
-  // Generate README
-  const readmePath = generateReadme(cdkOutputDir, finalState.metadata);
-  console.log(`   - README.md`);
-
-  console.log(`\n📁 CDK project location: ${cdkOutputDir}`);
-} catch (error) {
-  console.error("\n❌ CDK code generation failed!");
-  console.error(error.message);
-  process.exit(1);
-}
-
-// ============================================================================
-// PHASE 4: Deployment
-// ============================================================================
-console.log("\n📍 PHASE 4: Deployment\n");
-
-const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
-const shouldDeploy = await rl2.question('Deploy to AWS now? (yes/no): ');
-rl2.close();
-
-if (shouldDeploy.trim().toLowerCase() === "yes" || shouldDeploy.trim().toLowerCase() === "y") {
-  const deployed = await deployCDK(cdkOutputDir, finalState.metadata);
-
-  if (deployed) {
-    console.log("\n" + "=".repeat(80));
-    console.log("🎉 SUCCESS! Your infrastructure is now live on AWS!");
-    console.log("=".repeat(80));
-    console.log(`\nCDK Project: ${cdkOutputDir}`);
-    console.log(`Diagram: ${diagramPath}`);
-    console.log("\nTo manage your infrastructure:");
-    console.log(`  cd ${cdkOutputDir}`);
-    console.log(`  cdk diff     # See changes`);
-    console.log(`  cdk deploy   # Deploy updates`);
-    console.log(`  cdk destroy  # Tear down stack\n`);
-  } else {
-    console.log("\n⚠️  Deployment was not completed.");
-    console.log(`\nYou can deploy manually later:`);
-    console.log(`  cd ${cdkOutputDir}`);
-    console.log(`  npm install`);
-    console.log(`  npm run build`);
-    console.log(`  cdk deploy\n`);
-  }
-} else {
-  console.log("\n⏸️  Skipping deployment.");
-  console.log(`\nTo deploy later:`);
-  console.log(`  cd ${cdkOutputDir}`);
-  console.log(`  npm install && npm run build`);
-  console.log(`  cdk deploy\n`);
-}
+await runIaCPipeline(finalState, cdkOutputDir, apiKey);

@@ -812,10 +812,84 @@ function measureEdgeLabelWidth(text) {
   return _textMeasureCtx.measureText(text).width;
 }
 
-const __STATE_JSON_PATH__ = null; // replaced by CLI renderer
-const __SERVER_PORT__ = null;     // replaced by CLI renderer
+const __STATE_JSON_PATH__ = "/Users/harry/LAHacks/LA_InfraAgent/cli/infra-diagram.state.json"; // replaced by CLI renderer
+const __SERVER_PORT__ = 62759;     // replaced by CLI renderer
 
-let state = freshState();
+let state = {
+  "schemaVersion": "0.2.0",
+  "metadata": {
+    "name": "EC2 Inference Server",
+    "stackName": "Ec2InferenceStack",
+    "region": "us-east-1",
+    "account": "",
+    "environment": "dev",
+    "createdAt": "2026-04-25T20:57:51.506Z"
+  },
+  "nodes": [
+    {
+      "id": "n_gfg1l8",
+      "type": "ec2",
+      "label": "Inference Server",
+      "cdkConstruct": "aws_ec2.Instance",
+      "cdkModule": "aws-cdk-lib/aws-ec2",
+      "cdkId": "InferenceServer",
+      "notes": "GPU-backed EC2 instance (g4dn.xlarge) that serves model inference over HTTPS. Public subnet with IMDSv2 required and encrypted gp3 root volume.",
+      "x": 320,
+      "y": 240,
+      "props": {
+        "instanceType": "g4dn.xlarge",
+        "machineImage": "ami-0c02fb55956c7d316",
+        "keyPairName": null,
+        "vpcRef": null,
+        "associatePublicIpAddress": true,
+        "removalPolicy": "DESTROY",
+        "vpcSubnets": {
+          "subnetType": "PUBLIC"
+        },
+        "allowAllOutbound": true,
+        "detailedMonitoring": true,
+        "requireImdsv2": true,
+        "blockDevices": [
+          {
+            "deviceName": "/dev/xvda",
+            "volume": {
+              "size": 100,
+              "volumeType": "gp3",
+              "encrypted": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_3cdbqk",
+      "type": "user",
+      "label": "End User",
+      "cdkConstruct": null,
+      "cdkModule": null,
+      "cdkId": "EndUser",
+      "notes": "External client that sends inference requests to the EC2 instance and receives results over HTTPS.",
+      "x": 740,
+      "y": 240,
+      "props": {
+        "authType": "NONE"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_d0q171",
+      "from": "n_gfg1l8",
+      "to": "n_3cdbqk",
+      "label": "Inference Response",
+      "relationship": "invoke",
+      "iamActions": [],
+      "cdkMethod": "inferenceServer.connections.allowFromAnyIpv4(ec2.Port.tcp(443))",
+      "protocol": "HTTPS",
+      "notes": "Security group inbound rule opens TCP 443 from 0.0.0.0/0; EC2 returns inference results to the end user over HTTPS."
+    }
+  ]
+};
 let selection = null;
 let viewport = { x: 0, y: 0, z: 1 };
 let fileName = "untitled.arch.json";
