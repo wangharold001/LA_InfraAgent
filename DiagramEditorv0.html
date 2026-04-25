@@ -1792,7 +1792,24 @@ function autoSpaceNodes() {
   if (changed) render();
 }
 
+// Strip props from add_node tool inputs before storing in history —
+// props are already written to state.nodes, no need to replay them in the transcript.
+function slimContent(content) {
+  return content.map(block => {
+    if (block.type !== "tool_use" || block.name !== "add_node") return block;
+    const { props, ...rest } = block.input;
+    return { ...block, input: rest };
+  });
+}
+
 async function runAgentLoop(apiKey) {
+  // Build system prompt once per user turn, not on every tool-use round-trip.
+  const systemPrompt = buildSystemPrompt();
+
+  // Work on a local copy. We only flush to chatHistory once the turn ends cleanly,
+  // so a mid-turn API error never leaves chatHistory with an unpaired tool_use.
+  const turnMessages = [...chatHistory];
+
   while (true) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -1805,9 +1822,9 @@ async function runAgentLoop(apiKey) {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
-        system: buildSystemPrompt(),
+        system: systemPrompt,
         tools: CLAUDE_TOOLS,
-        messages: chatHistory
+        messages: turnMessages
       })
     });
 
@@ -1816,7 +1833,7 @@ async function runAgentLoop(apiKey) {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       appendMsg("error", "API error: " + (err.error?.message || res.statusText));
-      return;
+      return; // chatHistory untouched — still valid for the next user message
     }
 
     const data = await res.json();
@@ -1825,18 +1842,24 @@ async function runAgentLoop(apiKey) {
     const texts = content.filter(b => b.type === "text").map(b => b.text).join("\n\n");
     if (texts) appendMsg("assistant", texts);
 
-    chatHistory.push({ role: "assistant", content });
+    turnMessages.push({ role: "assistant", content: slimContent(content) });
 
-    if (data.stop_reason !== "tool_use") { autoSpaceNodes(); break; }
+    if (data.stop_reason !== "tool_use") {
+      // Commit the completed turn to the shared history.
+      chatHistory.length = 0;
+      chatHistory.push(...turnMessages);
+      autoSpaceNodes();
+      break;
+    }
 
     const toolResults = [];
     for (const block of content.filter(b => b.type === "tool_use")) {
-      appendMsg("system-note", `⚙ ${block.name}(${JSON.stringify(block.input)})`);
+      appendMsg("system-note", `⚙ ${block.name}(${block.input.label || block.input.id || block.input.name || ""})`);
       const result = executeTool(block.name, block.input);
       toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
     }
 
-    chatHistory.push({ role: "user", content: toolResults });
+    turnMessages.push({ role: "user", content: toolResults });
     chatTyping.classList.add("visible");
   }
 }
