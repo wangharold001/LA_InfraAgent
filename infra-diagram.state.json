@@ -1,0 +1,159 @@
+{
+  "schemaVersion": "0.2.0",
+  "metadata": {
+    "name": "HTTP File Upload Pipeline",
+    "stackName": "HttpFileUploadStack",
+    "region": "us-east-1",
+    "account": "",
+    "environment": "dev",
+    "createdAt": "2026-04-25T22:17:09.444Z"
+  },
+  "nodes": [
+    {
+      "id": "n_5qlfy2",
+      "type": "user",
+      "label": "HTTP Client",
+      "cdkConstruct": null,
+      "cdkModule": null,
+      "cdkId": "HttpClient",
+      "notes": "End user or external system that uploads a file via HTTP POST to the EC2 instance.",
+      "x": 80,
+      "y": 300,
+      "props": {
+        "authType": "NONE"
+      }
+    },
+    {
+      "id": "n_1joaml",
+      "type": "s3",
+      "label": "Upload Bucket",
+      "cdkConstruct": "aws_s3.Bucket",
+      "cdkModule": "aws-cdk-lib/aws-s3",
+      "cdkId": "UploadBucket",
+      "notes": "S3 bucket that durably stores the uploaded files; versioning is enabled and public access is fully blocked.",
+      "x": 720,
+      "y": 160,
+      "props": {
+        "versioned": true,
+        "blockPublicAccess": "BLOCK_ALL",
+        "encryption": "S3_MANAGED",
+        "cors": [],
+        "lifecycleRules": [],
+        "removalPolicy": "RETAIN",
+        "autoDeleteObjects": false
+      }
+    },
+    {
+      "id": "n_u15lid",
+      "type": "sns",
+      "label": "Upload Notification Topic",
+      "cdkConstruct": "aws_sns.Topic",
+      "cdkModule": "aws-cdk-lib/aws-sns",
+      "cdkId": "UploadNotificationTopic",
+      "notes": "SNS topic that fans out upload notifications; the email subscription delivers a message to wangharold001@gmail.com on every file upload.",
+      "x": 720,
+      "y": 440,
+      "props": {
+        "fifo": false,
+        "contentBasedDeduplication": false,
+        "masterKey": null,
+        "topicName": "upload-notification-topic",
+        "displayName": "File Upload Notifications",
+        "encryption": "KMS_MANAGED"
+      }
+    },
+    {
+      "id": "n_o67i3k",
+      "type": "external",
+      "label": "wangharold001@gmail.com",
+      "cdkConstruct": null,
+      "cdkModule": null,
+      "cdkId": "EmailSubscriber",
+      "notes": "Email endpoint subscribed to the SNS topic via the EmailSubscription construct; AWS will send a confirmation email before messages are delivered.",
+      "x": 1090,
+      "y": 440,
+      "props": {
+        "endpoint": "wangharold001@gmail.com",
+        "authType": "NONE",
+        "protocol": "email"
+      }
+    },
+    {
+      "id": "n_wqd4q7",
+      "type": "ec2",
+      "label": "Upload Server",
+      "cdkConstruct": "aws_ec2.Instance",
+      "cdkModule": "aws-cdk-lib/aws-ec2",
+      "cdkId": "UploadServer",
+      "notes": "Upload server on a t3.micro (2 vCPUs, 1 GiB RAM, x86_64). Sits in the middle of the pipeline — receives HTTP POST uploads from the client and writes files directly to the S3 Upload Bucket, then publishes an SNS notification.",
+      "x": 380,
+      "y": 300,
+      "props": {
+        "instanceType": "t3.micro",
+        "machineImage": "ami-amazon-linux-2023",
+        "keyPairName": null,
+        "vpcRef": "default",
+        "associatePublicIpAddress": true,
+        "removalPolicy": "DESTROY",
+        "architecture": "x86_64",
+        "ebsOptimized": true,
+        "rootVolume": {
+          "size": 8,
+          "encrypted": true,
+          "deleteOnTermination": true
+        },
+        "detailedMonitoring": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_ritzzl",
+      "from": "n_u15lid",
+      "to": "n_o67i3k",
+      "label": "Email subscription",
+      "relationship": "subscription",
+      "iamActions": [],
+      "cdkMethod": "uploadNotificationTopic.addSubscription(new EmailSubscription('wangharold001@gmail.com'))",
+      "protocol": "SMTP (SNS-managed)",
+      "notes": "Uses aws-cdk-lib/aws-sns-subscriptions EmailSubscription; the subscriber must confirm the opt-in email before messages are delivered."
+    },
+    {
+      "id": "e_s76s68",
+      "from": "n_5qlfy2",
+      "to": "n_wqd4q7",
+      "label": "HTTP POST /upload",
+      "relationship": "invoke",
+      "iamActions": [],
+      "cdkMethod": "N/A — client-to-server HTTP request",
+      "protocol": "HTTPS",
+      "notes": "HTTP client sends a multipart file upload POST request directly to the EC2 instance."
+    },
+    {
+      "id": "e_1bnans",
+      "from": "n_wqd4q7",
+      "to": "n_1joaml",
+      "label": "PutObject (file)",
+      "relationship": "write",
+      "iamActions": [
+        "s3:PutObject"
+      ],
+      "cdkMethod": "bucket.grantPut(uploadServerRole)",
+      "protocol": "AWS SDK v3",
+      "notes": "EC2 instance profile role must be granted s3:PutObject on the Upload Bucket."
+    },
+    {
+      "id": "e_3icprg",
+      "from": "n_wqd4q7",
+      "to": "n_u15lid",
+      "label": "Publish notification",
+      "relationship": "invoke",
+      "iamActions": [
+        "sns:Publish"
+      ],
+      "cdkMethod": "topic.grantPublish(uploadServerRole)",
+      "protocol": "AWS SDK v3",
+      "notes": "EC2 instance profile role must be granted sns:Publish on the Upload Notification Topic after a successful S3 PutObject."
+    }
+  ]
+}
