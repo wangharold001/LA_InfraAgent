@@ -1,0 +1,2011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AWS Diagram Editor</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --surface: #ffffff;
+    --ink: #1f1f1c;
+    --muted: #6b6b64;
+    --line: #d9d7ce;
+    --line-strong: #2c2c2a;
+    --accent: #d85a30;
+    --sel: #378add;
+    --sel-bg: #e6f1fb;
+    --font: ui-sans-serif, -apple-system, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: var(--font); color: var(--ink); background: var(--bg); }
+  button { font: inherit; color: inherit; }
+
+  .app {
+    display: grid;
+    grid-template-columns: 180px 1fr 280px;
+    grid-template-rows: 44px 1fr 5px 200px;
+    height: 100vh;
+    gap: 1px;
+    background: var(--line);
+  }
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    background: var(--surface);
+  }
+  .topbar .title { font-weight: 500; margin-right: auto; letter-spacing: -0.01em; }
+  .topbar button {
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .topbar button:hover { background: var(--bg); }
+  .topbar .file-name { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 10px; }
+
+  .palette {
+    background: var(--surface);
+    padding: 12px;
+    overflow-y: auto;
+  }
+  .palette h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .palette-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: grab;
+    user-select: none;
+    font-size: 13px;
+  }
+  .palette-item:hover { background: var(--bg); border-color: var(--line); }
+  .palette-item:active { cursor: grabbing; }
+  .palette-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
+  .canvas-wrap {
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  .canvas {
+    width: 100%;
+    height: 100%;
+    cursor: default;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-color: var(--surface);
+  }
+  .canvas.panning { cursor: grabbing; }
+
+  .node-group { cursor: move; }
+  .node-rect {
+    fill: var(--surface);
+    stroke: var(--line-strong);
+    stroke-width: 1;
+  }
+  .node-group.selected .node-rect {
+    stroke: var(--sel);
+    stroke-width: 2;
+  }
+  .node-title {
+    font: 500 13px var(--font);
+    fill: var(--ink);
+    pointer-events: none;
+  }
+  .node-sub {
+    font: 11px var(--mono);
+    fill: var(--muted);
+    pointer-events: none;
+  }
+  .node-port {
+    fill: var(--surface);
+    stroke: var(--muted);
+    stroke-width: 1.5;
+    cursor: crosshair;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .node-group:hover .node-port { opacity: 1; }
+  .node-port:hover { stroke: var(--accent); fill: var(--accent); }
+
+  .edge {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1.5;
+  }
+  .edge.selected { stroke: var(--sel); stroke-width: 2; }
+  .edge-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    cursor: pointer;
+  }
+  .edge-label {
+    font: 12px var(--font);
+    fill: var(--ink);
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+  }
+  .edge-preview {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+    pointer-events: none;
+  }
+
+  .inspector {
+    background: var(--surface);
+    padding: 14px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  .inspector h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .inspector .empty { color: var(--muted); font-style: italic; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    padding: 5px 7px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .field textarea { font-family: var(--mono); font-size: 12px; min-height: 50px; resize: vertical; }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    outline: 1px solid var(--sel);
+    outline-offset: -1px;
+    border-color: var(--sel);
+  }
+  .inspector .danger {
+    margin-top: 10px;
+    padding: 5px 10px;
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--accent);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .inspector .danger:hover { background: #fcebeb; }
+
+  .json-resize-handle {
+    grid-column: 1 / -1;
+    height: 5px;
+    cursor: ns-resize;
+    background: var(--line);
+    flex-shrink: 0;
+    transition: background 0.15s;
+    z-index: 10;
+  }
+  .json-resize-handle:hover, .json-resize-handle.dragging { background: var(--sel); }
+  .json-pane {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .json-pane .json-head {
+    display: flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--line);
+    gap: 10px;
+  }
+  .json-pane .json-head h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; font-weight: 500; }
+  .json-pane .json-head .info { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+  .json-pane pre {
+    margin: 0;
+    padding: 10px 14px;
+    overflow: auto;
+    font: 12px/1.5 var(--mono);
+    flex: 1;
+    color: var(--ink);
+  }
+  .json-pane .key { color: #185fa5; }
+  .json-pane .str { color: #3b6d11; }
+  .json-pane .num { color: #854f0b; }
+
+  /* Chat Panel */
+  .chat-panel {
+    position: fixed;
+    top: 0;
+    right: -420px;
+    width: 420px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    transition: right 0.25s ease;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.08);
+  }
+  .chat-panel.open { right: 0; }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    height: 44px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  .chat-header .chat-title { font-weight: 500; font-size: 14px; flex: 1; }
+  .chat-header .chat-model { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .chat-header button {
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .chat-header button:hover { background: var(--bg); }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .chat-msg {
+    max-width: 88%;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .chat-msg.user {
+    align-self: flex-end;
+    background: var(--sel);
+    color: #fff;
+    border-bottom-right-radius: 2px;
+  }
+  .chat-msg.assistant {
+    align-self: flex-start;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-bottom-left-radius: 2px;
+  }
+  .chat-msg.system-note {
+    align-self: center;
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-style: italic;
+    border: none;
+    padding: 2px 0;
+  }
+  .chat-msg.error {
+    align-self: flex-start;
+    background: #fcebeb;
+    border: 1px solid #f0c5c5;
+    color: var(--accent);
+    border-bottom-left-radius: 2px;
+  }
+
+  .chat-typing {
+    align-self: flex-start;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    border-bottom-left-radius: 2px;
+    padding: 10px 14px;
+    display: none;
+    gap: 4px;
+    align-items: center;
+  }
+  .chat-typing.visible { display: flex; }
+  .chat-typing span {
+    width: 6px; height: 6px;
+    background: var(--muted);
+    border-radius: 50%;
+    animation: bounce 1.2s infinite;
+  }
+  .chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-5px); }
+  }
+
+  .chat-input-area {
+    border-top: 1px solid var(--line);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .chat-api-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .chat-api-row label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .chat-api-row input {
+    flex: 1;
+    padding: 4px 7px;
+    font: 12px var(--mono);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .chat-api-row input:focus { outline: 1px solid var(--sel); border-color: var(--sel); }
+  .chat-compose {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .chat-compose textarea {
+    flex: 1;
+    padding: 7px 9px;
+    font: 13px var(--font);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+    resize: none;
+    min-height: 38px;
+    max-height: 120px;
+    line-height: 1.4;
+  }
+  .chat-compose textarea:focus { outline: 1px solid var(--sel); border-color: var(--sel); }
+  .chat-send {
+    padding: 7px 14px;
+    background: var(--sel);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chat-send:hover { background: #2b6fc0; }
+  .chat-send:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+
+  .chat-context-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chat-context-row label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .chat-context-row input[type=checkbox] { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="title">AWS Diagram</div>
+    <span class="file-name" id="fileName">untitled.arch.json</span>
+    <button id="btnNew">New</button>
+    <button id="btnChatAI" style="background:#378add;color:#fff;border-color:#2b6fc0;font-weight:500;">Chat with AI</button>
+    <button id="btnOpen">Open</button>
+    <button id="btnCopyJson">Copy JSON</button>
+    <span id="saveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;" title="Auto-save status">auto-save off</span>
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+  </div>
+
+  <div class="palette">
+    <h3>Compute</h3>
+    <div class="palette-item" draggable="true" data-type="lambda"><div class="palette-swatch" style="background:#EF9F27"></div>Lambda</div>
+    <div class="palette-item" draggable="true" data-type="ec2"><div class="palette-swatch" style="background:#EF9F27"></div>EC2</div>
+    <div class="palette-item" draggable="true" data-type="fargate"><div class="palette-swatch" style="background:#EF9F27"></div>Fargate</div>
+    <h3 style="margin-top:14px">Data</h3>
+    <div class="palette-item" draggable="true" data-type="rds"><div class="palette-swatch" style="background:#378add"></div>RDS</div>
+    <div class="palette-item" draggable="true" data-type="dynamodb"><div class="palette-swatch" style="background:#378add"></div>DynamoDB</div>
+    <div class="palette-item" draggable="true" data-type="s3"><div class="palette-swatch" style="background:#1d9e75"></div>S3</div>
+    <div class="palette-item" draggable="true" data-type="elasticache"><div class="palette-swatch" style="background:#378add"></div>ElastiCache</div>
+    <h3 style="margin-top:14px">Integration</h3>
+    <div class="palette-item" draggable="true" data-type="sqs"><div class="palette-swatch" style="background:#d85a30"></div>SQS</div>
+    <div class="palette-item" draggable="true" data-type="sns"><div class="palette-swatch" style="background:#d85a30"></div>SNS</div>
+    <div class="palette-item" draggable="true" data-type="apigateway"><div class="palette-swatch" style="background:#d85a30"></div>API Gateway</div>
+    <div class="palette-item" draggable="true" data-type="alb"><div class="palette-swatch" style="background:#d85a30"></div>ALB</div>
+    <h3 style="margin-top:14px">Network</h3>
+    <div class="palette-item" draggable="true" data-type="vpc"><div class="palette-swatch" style="background:#888780"></div>VPC</div>
+    <div class="palette-item" draggable="true" data-type="cloudfront"><div class="palette-swatch" style="background:#888780"></div>CloudFront</div>
+    <h3 style="margin-top:14px">Other</h3>
+    <div class="palette-item" draggable="true" data-type="external"><div class="palette-swatch" style="background:#6b6b64"></div>External</div>
+    <div class="palette-item" draggable="true" data-type="user"><div class="palette-swatch" style="background:#6b6b64"></div>User</div>
+  </div>
+
+  <div class="canvas-wrap">
+    <svg id="canvas" class="canvas" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#2c2c2a"/>
+        </marker>
+        <marker id="arrowhead-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#378add"/>
+        </marker>
+        <symbol id="icon-lambda" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <text x="12" y="18" text-anchor="middle" fill="white" font-size="16" font-weight="600" font-family="serif">λ</text>
+        </symbol>
+        <symbol id="icon-ec2" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <rect x="3" y="5" width="15" height="4.5" rx="1" fill="none" stroke="white" stroke-width="1.3"/>
+          <rect x="3" y="14.5" width="15" height="4.5" rx="1" fill="none" stroke="white" stroke-width="1.3"/>
+          <circle cx="20" cy="7.25" r="1.2" fill="white"/>
+          <circle cx="20" cy="16.75" r="1.2" fill="white"/>
+        </symbol>
+        <symbol id="icon-fargate" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <rect x="3" y="3" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+        </symbol>
+        <symbol id="icon-rds" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <ellipse cx="12" cy="7" rx="6.5" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="5.5" y1="7" x2="5.5" y2="17" stroke="white" stroke-width="1.3"/>
+          <line x1="18.5" y1="7" x2="18.5" y2="17" stroke="white" stroke-width="1.3"/>
+          <ellipse cx="12" cy="17" rx="6.5" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-dynamodb" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <path d="M12 4L20 12L12 20L4 12Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1"/>
+        </symbol>
+        <symbol id="icon-s3" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#1d9e75"/>
+          <ellipse cx="12" cy="7" rx="7" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="5" y1="7" x2="5" y2="18" stroke="white" stroke-width="1.3"/>
+          <line x1="19" y1="7" x2="19" y2="18" stroke="white" stroke-width="1.3"/>
+          <path d="M5 18Q12 21.5 19 18" fill="none" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-elasticache" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <path d="M13.5 3L7 13.5H12.5L10.5 21L17 10.5H11.5Z" fill="white"/>
+        </symbol>
+        <symbol id="icon-sqs" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <rect x="3" y="7" width="13" height="2.5" rx="1.2" fill="white"/>
+          <rect x="3" y="11" width="13" height="2.5" rx="1.2" fill="white"/>
+          <rect x="3" y="15" width="13" height="2.5" rx="1.2" fill="white"/>
+          <path d="M17 12H21M19.5 10L21 12L19.5 14" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-sns" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <path d="M4 9.5V14.5L8 14.5L14 18.5V5.5L8 9.5H4Z" fill="white"/>
+          <path d="M17 9Q19 12 17 15" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M19 7Q22 12 19 17" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-apigateway" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <path d="M7 4.5V4H10.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7 19.5V20H10.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 4H17V4.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 20H17V19.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="8" y1="9" x2="16" y2="9" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="12" x2="16" y2="12" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="15" x2="13" y2="15" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-alb" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <line x1="3" y1="12" x2="9" y2="12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="7" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="12" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="17" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <rect x="14" y="4.5" width="7" height="4" rx="1" fill="white"/>
+          <rect x="14" y="10" width="7" height="4" rx="1" fill="white"/>
+          <rect x="14" y="15.5" width="7" height="4" rx="1" fill="white"/>
+        </symbol>
+        <symbol id="icon-vpc" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#888780"/>
+          <path d="M12 3L20 7V13C20 17.5 16 20.5 12 22C8 20.5 4 17.5 4 13V7Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M8.5 12L11 14.5L15.5 10" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-cloudfront" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#888780"/>
+          <circle cx="12" cy="12" r="8" fill="none" stroke="white" stroke-width="1.3"/>
+          <ellipse cx="12" cy="12" rx="3.5" ry="8" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-external" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <rect x="4" y="8" width="12" height="12" rx="1.5" fill="none" stroke="white" stroke-width="1.5"/>
+          <path d="M13 4H20V11" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="20" y1="4" x2="12" y2="12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-user" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <circle cx="12" cy="8.5" r="3.5" fill="none" stroke="white" stroke-width="1.5"/>
+          <path d="M4.5 20C4.5 16 8 14 12 14C16 14 19.5 16 19.5 20" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+      </defs>
+      <g id="viewport">
+        <g id="edges"></g>
+        <g id="nodes"></g>
+        <g id="edgeLabels"></g>
+        <path id="edgePreview" class="edge-preview" style="display:none"></path>
+      </g>
+    </svg>
+  </div>
+
+  <div class="inspector" id="inspector">
+    <h3>Inspector</h3>
+    <div class="empty">Select a node or edge to edit its properties.</div>
+  </div>
+
+  <div class="json-resize-handle" id="jsonResizeHandle"></div>
+  <div class="json-pane">
+    <div class="json-head">
+      <h3>Diagram JSON</h3>
+      <span class="info" id="jsonInfo">0 nodes, 0 edges</span>
+      <span id="jsonFilePath" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;"></span>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto;">Edit then Cmd+S to apply</span>
+    </div>
+    <textarea id="jsonEdit" style="flex:1;margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--ink);border:none;outline:none;resize:none;background:var(--surface);overflow:auto;" spellcheck="false"></textarea>
+  </div>
+</div>
+
+<!-- AI Chat Panel -->
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-header">
+    <div class="chat-title">Chat with AI</div>
+    <span class="chat-model">claude-sonnet-4-6</span>
+    <button id="btnClearChat">Clear</button>
+    <button id="btnCloseChat">✕</button>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>
+  </div>
+
+  <div class="chat-typing" id="chatTyping">
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="chat-input-area">
+    <div class="chat-api-row">
+      <label>API Key</label>
+      <input type="password" id="chatApiKey" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div class="chat-api-row">
+      <label>Mode</label>
+      <select id="chatMode" style="flex:1;padding:4px 7px;font:12px var(--mono);border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--ink);">
+        <option value="">Auto (infer from context)</option>
+        <option value="minimal">Minimal — serverless-only, zero fixed costs</option>
+        <option value="simple">Simple — one always-on tier, no VPC, single-AZ</option>
+        <option value="standard">Standard — VPC, private subnets, async decoupling</option>
+        <option value="enterprise">Enterprise — multi-AZ, caching, ALB, WAF, full HA</option>
+      </select>
+    </div>
+    <div class="chat-context-row">
+      <label>
+        <input type="checkbox" id="chatIncludeDiagram" checked>
+        Include current diagram as context
+      </label>
+    </div>
+    <div class="chat-compose">
+      <textarea id="chatInput" placeholder="Ask about your architecture…" rows="1"></textarea>
+      <button class="chat-send" id="chatSend">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SERVICE_META = {
+  lambda:      { label: "Lambda",      color: "#EF9F27" },
+  ec2:         { label: "EC2",         color: "#EF9F27" },
+  fargate:     { label: "Fargate",     color: "#EF9F27" },
+  rds:         { label: "RDS",         color: "#378add" },
+  dynamodb:    { label: "DynamoDB",    color: "#378add" },
+  s3:          { label: "S3",          color: "#1d9e75" },
+  elasticache: { label: "ElastiCache", color: "#378add" },
+  sqs:         { label: "SQS",         color: "#d85a30" },
+  sns:         { label: "SNS",         color: "#d85a30" },
+  apigateway:  { label: "API Gateway", color: "#d85a30" },
+  alb:         { label: "ALB",         color: "#d85a30" },
+  vpc:         { label: "VPC",         color: "#888780" },
+  cloudfront:  { label: "CloudFront",  color: "#888780" },
+  external:    { label: "External",    color: "#6b6b64" },
+  user:        { label: "User",        color: "#6b6b64" },
+};
+
+// CDK construct mapping — used to stamp cdkConstruct on every node
+const CDK_META = {
+  lambda:      { construct: "aws_lambda.Function",                                    module: "aws-cdk-lib/aws-lambda" },
+  ec2:         { construct: "aws_ec2.Instance",                                       module: "aws-cdk-lib/aws-ec2" },
+  fargate:     { construct: "aws_ecs_patterns.ApplicationLoadBalancedFargateService", module: "aws-cdk-lib/aws-ecs-patterns" },
+  rds:         { construct: "aws_rds.DatabaseInstance",                               module: "aws-cdk-lib/aws-rds" },
+  dynamodb:    { construct: "aws_dynamodb.TableV2",                                   module: "aws-cdk-lib/aws-dynamodb" },
+  s3:          { construct: "aws_s3.Bucket",                                          module: "aws-cdk-lib/aws-s3" },
+  elasticache: { construct: "aws_elasticache.CfnReplicationGroup",                   module: "aws-cdk-lib/aws-elasticache" },
+  sqs:         { construct: "aws_sqs.Queue",                                          module: "aws-cdk-lib/aws-sqs" },
+  sns:         { construct: "aws_sns.Topic",                                          module: "aws-cdk-lib/aws-sns" },
+  apigateway:  { construct: "aws_apigatewayv2.HttpApi",                              module: "aws-cdk-lib/aws-apigatewayv2" },
+  alb:         { construct: "aws_elasticloadbalancingv2.ApplicationLoadBalancer",    module: "aws-cdk-lib/aws-elasticloadbalancingv2" },
+  vpc:         { construct: "aws_ec2.Vpc",                                            module: "aws-cdk-lib/aws-ec2" },
+  cloudfront:  { construct: "aws_cloudfront.Distribution",                            module: "aws-cdk-lib/aws-cloudfront" },
+  external:    { construct: null, module: null },
+  user:        { construct: null, module: null },
+};
+
+// Minimum CDK-complete props per service — agent fills these in, user can override in inspector
+const NODE_CDK_DEFAULTS = {
+  lambda: {
+    runtime: "NODEJS_20_X",
+    handler: "index.handler",
+    code: "lambda/handler",
+    memorySize: 512,
+    timeout: 29,
+    environment: {},
+    tracing: "Active",
+    reservedConcurrentExecutions: null,
+    layers: [],
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  ec2: {
+    instanceType: "T3_MICRO",
+    machineImage: "AMAZON_LINUX_2023",
+    keyPairName: null,
+    vpcRef: null,
+    associatePublicIpAddress: false,
+    removalPolicy: "DESTROY"
+  },
+  fargate: {
+    cpu: 256,
+    memoryLimitMiB: 512,
+    image: "amazon/amazon-ecs-sample",
+    containerPort: 80,
+    desiredCount: 1,
+    assignPublicIp: false,
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  rds: {
+    engine: "POSTGRES",
+    engineVersion: "15.4",
+    instanceClass: "T3",
+    instanceSize: "MICRO",
+    databaseName: "appdb",
+    multiAz: false,
+    storageEncrypted: true,
+    allocatedStorage: 20,
+    deletionProtection: false,
+    vpcRef: null,
+    removalPolicy: "SNAPSHOT"
+  },
+  dynamodb: {
+    partitionKey: { name: "pk", type: "STRING" },
+    sortKey: null,
+    billingMode: "PAY_PER_REQUEST",
+    stream: "NONE",
+    pointInTimeRecovery: true,
+    encryption: "AWS_MANAGED",
+    gsi: [],
+    removalPolicy: "RETAIN"
+  },
+  s3: {
+    versioned: false,
+    blockPublicAccess: "BLOCK_ALL",
+    encryption: "S3_MANAGED",
+    cors: [],
+    lifecycleRules: [],
+    removalPolicy: "RETAIN",
+    autoDeleteObjects: false
+  },
+  elasticache: {
+    engine: "redis",
+    cacheNodeType: "cache.t3.micro",
+    numCacheNodes: 1,
+    automaticFailoverEnabled: false,
+    atRestEncryptionEnabled: true,
+    transitEncryptionEnabled: true,
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  sqs: {
+    fifo: false,
+    visibilityTimeout: 30,
+    messageRetentionPeriod: 345600,
+    receiveMessageWaitTime: 0,
+    dlqRef: null,
+    maxReceiveCount: 3,
+    encryption: "KMS_MANAGED",
+    removalPolicy: "DESTROY"
+  },
+  sns: {
+    fifo: false,
+    contentBasedDeduplication: false,
+    masterKey: null,
+    removalPolicy: "DESTROY"
+  },
+  apigateway: {
+    apiType: "HTTP",
+    stageName: "prod",
+    auth: "NONE",
+    cors: true,
+    throttlingBurstLimit: 100,
+    throttlingRateLimit: 50,
+    removalPolicy: "DESTROY"
+  },
+  alb: {
+    internetFacing: true,
+    targetType: "IP",
+    healthCheckPath: "/health",
+    listenerPort: 443,
+    listenerProtocol: "HTTPS",
+    vpcRef: null,
+    removalPolicy: "DESTROY"
+  },
+  vpc: {
+    cidr: "10.0.0.0/16",
+    maxAzs: 2,
+    natGateways: 1,
+    subnetConfiguration: [
+      { name: "Public",  subnetType: "PUBLIC",               cidrMask: 24 },
+      { name: "Private", subnetType: "PRIVATE_WITH_EGRESS",  cidrMask: 24 }
+    ],
+    removalPolicy: "DESTROY"
+  },
+  cloudfront: {
+    priceClass: "PRICE_CLASS_100",
+    defaultRootObject: "index.html",
+    httpVersion: "HTTP2",
+    certificate: null,
+    webAclId: null,
+    removalPolicy: "DESTROY"
+  },
+  external: { endpoint: "", authType: "NONE" },
+  user:     { authType: "COGNITO" },
+};
+
+// Valid edge relationship types
+const EDGE_RELATIONSHIPS = [
+  "iam-grant", "event-source-mapping", "subscription",
+  "api-integration", "origin", "trigger", "invoke",
+  "stream-consumer", "read", "write", "read-write"
+];
+
+const NODE_MIN_W = 140;
+const NODE_H = 56;
+
+const _textMeasureCanvas = document.createElement("canvas");
+const _textMeasureCtx = _textMeasureCanvas.getContext("2d");
+
+function nodeWidth(n) {
+  const meta = SERVICE_META[n.type] || { label: n.type };
+  const label = n.label || meta.label;
+  const sub = meta.label.toLowerCase();
+  _textMeasureCtx.font = "500 13px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  const titleW = _textMeasureCtx.measureText(label).width;
+  _textMeasureCtx.font = "11px ui-monospace, 'SF Mono', Consolas, monospace";
+  const subW = _textMeasureCtx.measureText(sub).width;
+  const needed = 40 + Math.max(titleW, subW) + 16;
+  return Math.max(NODE_MIN_W, Math.ceil(needed / 10) * 10);
+}
+
+function measureEdgeLabelWidth(text) {
+  _textMeasureCtx.font = "12px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  return _textMeasureCtx.measureText(text).width;
+}
+
+const __STATE_JSON_PATH__ = null; // replaced by CLI renderer
+const __SERVER_PORT__ = null;     // replaced by CLI renderer
+
+let state = freshState();
+let selection = null;
+let viewport = { x: 0, y: 0, z: 1 };
+let fileName = "untitled.arch.json";
+
+// ── Auto-save (CLI server mode) ───────────────────────────────────────────
+let _saveTimer = null;
+
+function _scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_doSave, 600);
+}
+
+async function _doSave() {
+  if (!__SERVER_PORT__) return;
+  const el = document.getElementById("saveStatus");
+  try {
+    const res = await fetch(`http://127.0.0.1:${__SERVER_PORT__}/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state, null, 2),
+    });
+    el.textContent = res.ok ? "✓ saved" : "⚠ save failed";
+    el.style.color  = res.ok ? "#1d9e75" : "#d85a30";
+  } catch {
+    el.textContent = "⚠ server unreachable";
+    el.style.color  = "#d85a30";
+  }
+}
+
+// ── JSON editor (bottom pane) ─────────────────────────────────────────────
+function _applyJsonEdit() {
+  const ta = document.getElementById("jsonEdit");
+  try {
+    const parsed = JSON.parse(ta.value);
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges))
+      throw new Error("Top-level 'nodes' and 'edges' arrays are required.");
+    state = parsed;
+    selection = null;
+    render();
+  } catch (e) {
+    alert("Invalid JSON: " + e.message);
+  }
+}
+
+function freshState() {
+  return {
+    schemaVersion: "0.2.0",
+    metadata: {
+      name: "Untitled",
+      stackName: "",
+      region: "us-east-1",
+      account: "",
+      environment: "dev",
+      createdAt: new Date().toISOString()
+    },
+    nodes: [],
+    edges: []
+  };
+}
+
+function uid(prefix) {
+  return prefix + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function toPascalCase(str) {
+  return (str || "")
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
+    .split(" ").filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join("");
+}
+
+const canvas = document.getElementById("canvas");
+const nodesLayer = document.getElementById("nodes");
+const edgesLayer = document.getElementById("edges");
+const edgeLabelsLayer = document.getElementById("edgeLabels");
+const viewportG = document.getElementById("viewport");
+const edgePreview = document.getElementById("edgePreview");
+const inspector = document.getElementById("inspector");
+const jsonInfo = document.getElementById("jsonInfo");
+const fileNameEl = document.getElementById("fileName");
+
+function render() {
+  edgesLayer.innerHTML = "";
+  edgeLabelsLayer.innerHTML = "";
+
+  for (const e of state.edges) {
+    const src = state.nodes.find(n => n.id === e.from);
+    const dst = state.nodes.find(n => n.id === e.to);
+    if (!src || !dst) continue;
+    const offset = edgePerpOffset(e);
+    const path = edgePath(src, dst, offset);
+    const g = svg("g");
+    const hit = svg("path", { class: "edge-hit", d: path });
+    hit.dataset.edgeId = e.id;
+    const isSel = selection && selection.kind === "edge" && selection.id === e.id;
+    const visible = svg("path", {
+      class: "edge" + (isSel ? " selected" : ""),
+      d: path,
+      "marker-end": isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)"
+    });
+    visible.dataset.edgeId = e.id;
+    g.appendChild(hit);
+    g.appendChild(visible);
+    g.addEventListener("dblclick", ev => {
+      ev.stopPropagation();
+      const mid = pathMidpoint(src, dst, offset);
+      startEdgeEdit(e, mid.x, mid.y);
+    });
+    edgesLayer.appendChild(g);
+  }
+
+  nodesLayer.innerHTML = "";
+  for (const n of state.nodes) {
+    nodesLayer.appendChild(renderNode(n));
+  }
+
+  // Render edge labels last so they always appear above nodes
+  for (const e of state.edges) {
+    if (!e.label) continue;
+    const src = state.nodes.find(n => n.id === e.from);
+    const dst = state.nodes.find(n => n.id === e.to);
+    if (!src || !dst) continue;
+    const mid = pathMidpoint(src, dst, edgePerpOffset(e));
+    const lw = measureEdgeLabelWidth(e.label);
+    const padX = 7, rh = 18;
+    const rw = lw + padX * 2;
+    const lg = svg("g");
+    lg.appendChild(svg("rect", {
+      x: mid.x - rw / 2, y: mid.y - rh / 2,
+      width: rw, height: rh, rx: 3,
+      fill: "white", stroke: "#d9d7ce", "stroke-width": "1"
+    }));
+    const text = svg("text", { class: "edge-label", x: mid.x, y: mid.y });
+    text.textContent = e.label;
+    lg.appendChild(text);
+    edgeLabelsLayer.appendChild(lg);
+  }
+
+  viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+  renderInspector();
+  renderJson();
+}
+
+function renderNode(n) {
+  const meta = SERVICE_META[n.type] || { label: n.type, color: "#888" };
+  const isSel = selection && selection.kind === "node" && selection.id === n.id;
+  const nw = nodeWidth(n);
+  const g = svg("g", {
+    class: "node-group" + (isSel ? " selected" : ""),
+    transform: `translate(${n.x} ${n.y})`
+  });
+  g.dataset.nodeId = n.id;
+
+  g.appendChild(svg("rect", { class: "node-rect", x: 0, y: 0, width: nw, height: NODE_H, rx: 4 }));
+  g.appendChild(svg("use", { href: "#icon-" + n.type, x: 8, y: (NODE_H - 24) / 2, width: 24, height: 24, "pointer-events": "none" }));
+
+  const title = svg("text", { class: "node-title", x: 40, y: NODE_H / 2 - 4 });
+  title.textContent = n.label || meta.label;
+  g.appendChild(title);
+
+  const sub = svg("text", { class: "node-sub", x: 40, y: NODE_H / 2 + 10 });
+  sub.textContent = meta.label.toLowerCase();
+  g.appendChild(sub);
+
+  const port = svg("circle", { class: "node-port", cx: nw, cy: NODE_H / 2, r: 5 });
+  port.dataset.nodeId = n.id;
+  port.dataset.role = "port";
+  g.appendChild(port);
+
+  g.addEventListener("dblclick", e => {
+    e.stopPropagation();
+    startNodeEdit(n);
+  });
+
+  return g;
+}
+
+const BIDIR_OFFSET = 9;
+
+function edgePerpOffset(e) {
+  const hasPair = state.edges.some(o => o.from === e.to && o.to === e.from);
+  if (!hasPair) return 0;
+  return e.from < e.to ? -BIDIR_OFFSET : BIDIR_OFFSET;
+}
+
+// Returns port positions + cubic bezier control points.
+// perpOffset shifts the path perpendicular to its direction (for bidirectional pairs).
+function getBestPorts(src, dst, perpOffset = 0) {
+  const srcW = nodeWidth(src), dstW = nodeWidth(dst);
+  const srcCx = src.x + srcW / 2, srcCy = src.y + NODE_H / 2;
+  const dstCx = dst.x + dstW / 2, dstCy = dst.y + NODE_H / 2;
+  const dx = dstCx - srcCx, dy = dstCy - srcCy;
+  let p;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    p = dx >= 0
+      ? { sx: src.x + srcW, sy: srcCy, tx: dst.x,        ty: dstCy, horiz: true,  dir: 1  }
+      : { sx: src.x,        sy: srcCy, tx: dst.x + dstW, ty: dstCy, horiz: true,  dir: -1 };
+    p.sy += perpOffset; p.ty += perpOffset;
+  } else {
+    p = dy >= 0
+      ? { sx: srcCx, sy: src.y + NODE_H, tx: dstCx, ty: dst.y,          horiz: false, dir: 1  }
+      : { sx: srcCx, sy: src.y,          tx: dstCx, ty: dst.y + NODE_H, horiz: false, dir: -1 };
+    p.sx += perpOffset; p.tx += perpOffset;
+  }
+  if (p.horiz) {
+    const off = Math.max(40, Math.abs(p.tx - p.sx) * 0.5);
+    p.cp1x = p.sx + p.dir * off; p.cp1y = p.sy;
+    p.cp2x = p.tx - p.dir * off; p.cp2y = p.ty;
+  } else {
+    const off = Math.max(40, Math.abs(p.ty - p.sy) * 0.5);
+    p.cp1x = p.sx; p.cp1y = p.sy + p.dir * off;
+    p.cp2x = p.tx; p.cp2y = p.ty - p.dir * off;
+  }
+  return p;
+}
+
+function edgePath(src, dst, perpOffset = 0) {
+  const p = getBestPorts(src, dst, perpOffset);
+  return `M${p.sx},${p.sy} C${p.cp1x},${p.cp1y} ${p.cp2x},${p.cp2y} ${p.tx},${p.ty}`;
+}
+
+// Actual bezier midpoint at t=0.5: B(t) = 0.125*P0 + 0.375*P1 + 0.375*P2 + 0.125*P3
+function pathMidpoint(src, dst, perpOffset = 0) {
+  const p = getBestPorts(src, dst, perpOffset);
+  return {
+    x: 0.125 * p.sx + 0.375 * p.cp1x + 0.375 * p.cp2x + 0.125 * p.tx,
+    y: 0.125 * p.sy + 0.375 * p.cp1y + 0.375 * p.cp2y + 0.125 * p.ty,
+  };
+}
+
+function applySelection(kind, id) {
+  selection = kind ? { kind, id } : null;
+  for (const el of nodesLayer.querySelectorAll(".node-group")) {
+    el.classList.toggle("selected", kind === "node" && el.dataset.nodeId === id);
+  }
+  for (const el of edgesLayer.querySelectorAll(".edge")) {
+    const isSel = kind === "edge" && el.dataset.edgeId === id;
+    el.classList.toggle("selected", isSel);
+    el.setAttribute("marker-end", isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)");
+  }
+  renderInspector();
+  renderJson();
+}
+
+function svg(name, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function renderInspector() {
+  inspector.innerHTML = "<h3>Inspector</h3>";
+
+  // ── Nothing selected → show diagram metadata ──
+  if (!selection) {
+    const m = state.metadata;
+    inspector.appendChild(field("Diagram name", m.name       || "", v => { m.name       = v; renderJson(); }));
+    inspector.appendChild(field("Stack name",   m.stackName  || "", v => { m.stackName  = v; renderJson(); }));
+    inspector.appendChild(field("Region",       m.region     || "", v => { m.region     = v; renderJson(); }));
+    inspector.appendChild(field("Account ID",   m.account    || "", v => { m.account    = v; renderJson(); }));
+    inspector.appendChild(field("Environment",  m.environment|| "", v => { m.environment= v; renderJson(); }));
+    const hint = document.createElement("div");
+    hint.className = "empty";
+    hint.style.marginTop = "12px";
+    hint.textContent = "Click a node or edge to edit its CDK properties.";
+    inspector.appendChild(hint);
+    return;
+  }
+
+  // ── Node inspector ──
+  if (selection.kind === "node") {
+    const n = state.nodes.find(x => x.id === selection.id);
+    if (!n) { selection = null; return renderInspector(); }
+
+    inspector.appendChild(field("ID",            n.id,                                          null, true));
+    inspector.appendChild(field("Service",       SERVICE_META[n.type]?.label || n.type,         null, true));
+    inspector.appendChild(field("CDK Construct", n.cdkConstruct || "—",                         null, true));
+    inspector.appendChild(field("CDK Module",    n.cdkModule    || "—",                         null, true));
+    inspector.appendChild(field("Label",         n.label || "",    v => { n.label   = v; render(); }));
+    inspector.appendChild(field("CDK ID",        n.cdkId  || "",   v => { n.cdkId  = v; renderJson(); }));
+    inspector.appendChild(textareaField("Notes", n.notes  || "",   v => { n.notes  = v; renderJson(); }, 2));
+
+    // Props JSON
+    const propsField = document.createElement("div");
+    propsField.className = "field";
+    const propsLbl = document.createElement("label");
+    propsLbl.textContent = "CDK Props (JSON)";
+    const propsTa = document.createElement("textarea");
+    propsTa.style.minHeight = "160px";
+    propsTa.value = JSON.stringify(n.props || {}, null, 2);
+    propsTa.addEventListener("change", () => {
+      try   { n.props = JSON.parse(propsTa.value); render(); }
+      catch (e) { alert("Invalid JSON: " + e.message); propsTa.value = JSON.stringify(n.props || {}, null, 2); }
+    });
+    propsField.appendChild(propsLbl);
+    propsField.appendChild(propsTa);
+    inspector.appendChild(propsField);
+
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.textContent = "Delete node";
+    del.addEventListener("click", () => deleteNode(n.id));
+    inspector.appendChild(del);
+  }
+
+  // ── Edge inspector ──
+  if (selection.kind === "edge") {
+    const e = state.edges.find(x => x.id === selection.id);
+    if (!e) { selection = null; return renderInspector(); }
+
+    const srcNode = state.nodes.find(n => n.id === e.from);
+    const dstNode = state.nodes.find(n => n.id === e.to);
+
+    inspector.appendChild(field("ID",    e.id,                                                null, true));
+    inspector.appendChild(field("From",  srcNode ? `${srcNode.label} (${e.from})` : e.from,  null, true));
+    inspector.appendChild(field("To",    dstNode ? `${dstNode.label} (${e.to})`   : e.to,    null, true));
+    inspector.appendChild(field("Label", e.label || "", v => { e.label = v; render(); }));
+
+    // Relationship select
+    const relWrap = document.createElement("div"); relWrap.className = "field";
+    const relLbl  = document.createElement("label"); relLbl.textContent = "Relationship";
+    const relSel  = document.createElement("select");
+    EDGE_RELATIONSHIPS.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r; opt.textContent = r;
+      if (r === (e.relationship || "invoke")) opt.selected = true;
+      relSel.appendChild(opt);
+    });
+    relSel.addEventListener("change", () => { e.relationship = relSel.value; renderJson(); });
+    relWrap.appendChild(relLbl); relWrap.appendChild(relSel);
+    inspector.appendChild(relWrap);
+
+    inspector.appendChild(field("Protocol", e.protocol || "", v => { e.protocol = v; renderJson(); }));
+    inspector.appendChild(field("CDK Method", e.cdkMethod || "", v => { e.cdkMethod = v; renderJson(); }, false, "e.g. table.grantReadWriteData(fn)"));
+
+    // IAM Actions textarea
+    const actWrap = document.createElement("div"); actWrap.className = "field";
+    const actLbl  = document.createElement("label"); actLbl.textContent = "IAM Actions (JSON array)";
+    const actTa   = document.createElement("textarea");
+    actTa.style.minHeight = "70px";
+    actTa.value = JSON.stringify(e.iamActions || [], null, 2);
+    actTa.addEventListener("change", () => {
+      try   { e.iamActions = JSON.parse(actTa.value); renderJson(); }
+      catch (err) { alert("Invalid JSON: " + err.message); actTa.value = JSON.stringify(e.iamActions || [], null, 2); }
+    });
+    actWrap.appendChild(actLbl); actWrap.appendChild(actTa);
+    inspector.appendChild(actWrap);
+
+    inspector.appendChild(textareaField("Notes", e.notes || "", v => { e.notes = v; renderJson(); }, 2));
+
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.textContent = "Delete edge";
+    del.addEventListener("click", () => deleteEdge(e.id));
+    inspector.appendChild(del);
+  }
+}
+
+function field(label, value, onChange, readonly, placeholder) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const lbl = document.createElement("label");
+  lbl.textContent = label;
+  const input = document.createElement("input");
+  input.value = value;
+  if (placeholder) input.placeholder = placeholder;
+  if (readonly) input.disabled = true;
+  if (onChange) input.addEventListener("change", e => onChange(e.target.value));
+  wrap.appendChild(lbl);
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function textareaField(label, value, onChange, rows) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const lbl = document.createElement("label");
+  lbl.textContent = label;
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.rows = rows || 3;
+  if (onChange) ta.addEventListener("change", e => onChange(e.target.value));
+  wrap.appendChild(lbl);
+  wrap.appendChild(ta);
+  return wrap;
+}
+
+function renderJson() {
+  const json = JSON.stringify(state, null, 2);
+  const ta = document.getElementById("jsonEdit");
+  if (document.activeElement !== ta) ta.value = json;
+  jsonInfo.textContent = state.nodes.length + " node" + (state.nodes.length === 1 ? "" : "s") + ", " + state.edges.length + " edge" + (state.edges.length === 1 ? "" : "s");
+  fileNameEl.textContent = fileName;
+  _scheduleSave();
+}
+
+
+
+function addNode(type, x, y) {
+  const meta    = SERVICE_META[type] || { label: type };
+  const cdkMeta = CDK_META[type]    || { construct: null, module: null };
+  const label   = meta.label;
+  const n = {
+    id: uid("n"), type, label,
+    cdkConstruct: cdkMeta.construct,
+    cdkModule:    cdkMeta.module,
+    cdkId:        toPascalCase(label),
+    notes:        "",
+    x: Math.round(x / 10) * 10,
+    y: Math.round(y / 10) * 10,
+    props: { ...(NODE_CDK_DEFAULTS[type] || {}) }
+  };
+  state.nodes.push(n);
+  selection = { kind: "node", id: n.id };
+  render();
+}
+
+function addEdge(from, to) {
+  if (from === to) return;
+  const e = { id: uid("e"), from, to, label: "" };
+  state.edges.push(e);
+  selection = { kind: "edge", id: e.id };
+  render();
+}
+
+function deleteNode(id) {
+  state.nodes = state.nodes.filter(n => n.id !== id);
+  state.edges = state.edges.filter(e => e.from !== id && e.to !== id);
+  selection = null;
+  render();
+}
+
+function deleteEdge(id) {
+  state.edges = state.edges.filter(e => e.id !== id);
+  selection = null;
+  render();
+}
+
+let drag = null;
+
+document.querySelectorAll(".palette-item").forEach(item => {
+  item.addEventListener("dragstart", e => {
+    e.dataTransfer.setData("text/aws-type", item.dataset.type);
+    e.dataTransfer.setData("text/plain", item.dataset.type);
+    e.dataTransfer.effectAllowed = "copy";
+  });
+});
+
+const canvasWrap = document.querySelector(".canvas-wrap");
+canvasWrap.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+canvasWrap.addEventListener("drop", e => {
+  e.preventDefault();
+  const type = e.dataTransfer.getData("text/aws-type") || e.dataTransfer.getData("text/plain");
+  if (!type) return;
+  const pt = clientToWorld(e.clientX, e.clientY);
+  addNode(type, pt.x - NODE_MIN_W / 2, pt.y - NODE_H / 2);
+});
+
+canvas.addEventListener("mousedown", e => {
+  const target = e.target;
+
+  if (target.dataset && target.dataset.role === "port") {
+    const fromId = target.dataset.nodeId;
+    const fromNode = state.nodes.find(n => n.id === fromId);
+    const pt = clientToWorld(e.clientX, e.clientY);
+    drag = { kind: "edge-draw", fromId };
+    edgePreview.style.display = "";
+    updateEdgePreview(fromNode, pt);
+    e.preventDefault();
+    return;
+  }
+
+  const nodeGroup = target.closest(".node-group");
+  if (nodeGroup) {
+    const id = nodeGroup.dataset.nodeId;
+    applySelection("node", id);
+    const n = state.nodes.find(x => x.id === id);
+    const pt = clientToWorld(e.clientX, e.clientY);
+    drag = { kind: "node-move", id, offsetX: pt.x - n.x, offsetY: pt.y - n.y };
+    return;
+  }
+
+  if (target.classList.contains("edge-hit")) {
+    applySelection("edge", target.dataset.edgeId);
+    return;
+  }
+
+  if (target === canvas) {
+    applySelection(null, null);
+    drag = { kind: "pan", startX: e.clientX, startY: e.clientY, vx: viewport.x, vy: viewport.y };
+    canvas.classList.add("panning");
+  }
+});
+
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  if (drag.kind === "node-move") {
+    const pt = clientToWorld(e.clientX, e.clientY);
+    const n = state.nodes.find(x => x.id === drag.id);
+    n.x = Math.round((pt.x - drag.offsetX) / 10) * 10;
+    n.y = Math.round((pt.y - drag.offsetY) / 10) * 10;
+    render();
+  } else if (drag.kind === "pan") {
+    viewport.x = drag.vx + (e.clientX - drag.startX);
+    viewport.y = drag.vy + (e.clientY - drag.startY);
+    viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+  } else if (drag.kind === "edge-draw") {
+    const pt = clientToWorld(e.clientX, e.clientY);
+    const fromNode = state.nodes.find(n => n.id === drag.fromId);
+    updateEdgePreview(fromNode, pt);
+  }
+});
+
+window.addEventListener("mouseup", e => {
+  if (!drag) return;
+  if (drag.kind === "edge-draw") {
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const nodeGroup = target && target.closest ? target.closest(".node-group") : null;
+    if (nodeGroup) {
+      const toId = nodeGroup.dataset.nodeId;
+      if (toId !== drag.fromId) addEdge(drag.fromId, toId);
+    }
+    edgePreview.style.display = "none";
+  }
+  canvas.classList.remove("panning");
+  drag = null;
+});
+
+function startNodeEdit(n) {
+  const nw = nodeWidth(n);
+  const rect = canvas.getBoundingClientRect();
+  const sx = rect.left + viewport.x + (n.x + 40) * viewport.z;
+  const sy = rect.top  + viewport.y + (n.y + NODE_H / 2 - 13) * viewport.z;
+  const sw = (nw - 48) * viewport.z;
+
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = n.label || "";
+  Object.assign(inp.style, {
+    position: "fixed", left: sx + "px", top: sy + "px",
+    width: sw + "px", height: (24 * viewport.z) + "px",
+    font: `500 ${13 * viewport.z}px ui-sans-serif,system-ui,sans-serif`,
+    border: "none", outline: "2px solid #378add",
+    background: "#fff", padding: "2px 4px",
+    borderRadius: "2px", zIndex: "1000", boxSizing: "border-box",
+  });
+  document.body.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const val = inp.value.trim();
+    n.label = val || (SERVICE_META[n.type] ? SERVICE_META[n.type].label : n.type);
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+    render();
+  };
+  const discard = () => {
+    done = true;
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+  };
+  inp.addEventListener("keydown", ev => {
+    if (ev.key === "Enter")  { ev.preventDefault(); commit(); }
+    if (ev.key === "Escape") { discard(); }
+  });
+  inp.addEventListener("blur", commit);
+}
+
+function startEdgeEdit(e, worldX, worldY) {
+  const rect = canvas.getBoundingClientRect();
+  const cx = rect.left + viewport.x + worldX * viewport.z;
+  const cy = rect.top  + viewport.y + worldY * viewport.z;
+  const sw = 120 * viewport.z;
+
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = e.label || "";
+  inp.placeholder = "label…";
+  Object.assign(inp.style, {
+    position: "fixed", left: (cx - sw / 2) + "px", top: (cy - 12 * viewport.z) + "px",
+    width: sw + "px", height: (24 * viewport.z) + "px",
+    font: `${12 * viewport.z}px ui-sans-serif,system-ui,sans-serif`,
+    border: "none", outline: "2px solid #378add",
+    background: "#fff", padding: "2px 4px",
+    borderRadius: "2px", zIndex: "1000", boxSizing: "border-box", textAlign: "center",
+  });
+  document.body.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    e.label = inp.value.trim();
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+    render();
+  };
+  const discard = () => {
+    done = true;
+    if (document.body.contains(inp)) document.body.removeChild(inp);
+  };
+  inp.addEventListener("keydown", ev => {
+    if (ev.key === "Enter")  { ev.preventDefault(); commit(); }
+    if (ev.key === "Escape") { discard(); }
+  });
+  inp.addEventListener("blur", commit);
+}
+
+function updateEdgePreview(fromNode, worldPt) {
+  const x1 = fromNode.x + nodeWidth(fromNode), y1 = fromNode.y + NODE_H / 2;
+  const x2 = worldPt.x, y2 = worldPt.y;
+  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
+  edgePreview.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+}
+
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const delta = -e.deltaY * 0.001;
+  const newZ = Math.min(3, Math.max(0.3, viewport.z * (1 + delta)));
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const worldBefore = { x: (cx - viewport.x) / viewport.z, y: (cy - viewport.y) / viewport.z };
+  viewport.z = newZ;
+  viewport.x = cx - worldBefore.x * newZ;
+  viewport.y = cy - worldBefore.y * newZ;
+  viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+}, { passive: false });
+
+window.addEventListener("keydown", e => {
+  if (e.key === "Delete" || e.key === "Backspace") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (!selection) return;
+    if (selection.kind === "node") deleteNode(selection.id);
+    if (selection.kind === "edge") deleteEdge(selection.id);
+  }
+});
+
+function clientToWorld(cx, cy) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (cx - rect.left - viewport.x) / viewport.z,
+    y: (cy - rect.top - viewport.y) / viewport.z
+  };
+}
+
+document.getElementById("btnNew").addEventListener("click", () => {
+  if (state.nodes.length && !confirm("Discard current diagram?")) return;
+  state = freshState();
+  selection = null;
+  fileName = "untitled.arch.json";
+  render();
+});
+
+document.getElementById("btnCopyJson").addEventListener("click", () => {
+  const btn = document.getElementById("btnCopyJson");
+  navigator.clipboard.writeText(JSON.stringify(state, null, 2)).then(() => {
+    btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = "Copy JSON", 1200);
+  });
+});
+
+// Cmd/Ctrl+S: apply JSON edits when textarea focused
+window.addEventListener("keydown", e => {
+  if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    if (document.activeElement === document.getElementById("jsonEdit")) _applyJsonEdit();
+  }
+});
+
+document.getElementById("btnOpen").addEventListener("click", () => {
+  document.getElementById("fileInput").click();
+});
+
+document.getElementById("fileInput").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed.nodes || !parsed.edges) throw new Error("Missing nodes or edges");
+    state = parsed;
+    fileName = file.name;
+    selection = null;
+    render();
+  } catch (err) {
+    alert("Failed to open: " + err.message);
+  }
+  e.target.value = "";
+});
+
+render();
+
+// Show save status based on mode
+if (__SERVER_PORT__) {
+  const el = document.getElementById("saveStatus");
+  el.textContent = "auto-saving";
+  el.style.color = "var(--muted)";
+  el.title = "Changes save automatically to the CLI";
+  if (__STATE_JSON_PATH__) document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
+} else if (__STATE_JSON_PATH__) {
+  document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
+  document.getElementById("saveStatus").title = "Click Save JSON to save changes";
+}
+
+// ── JSON pane resize ─────────────────────────────────────────────────────────
+{
+  const appEl  = document.querySelector(".app");
+  const handle = document.getElementById("jsonResizeHandle");
+  let resizing = false, startY = 0, startH = 0;
+
+  handle.addEventListener("mousedown", e => {
+    resizing = true;
+    startY   = e.clientY;
+    startH   = document.querySelector(".json-pane").offsetHeight;
+    handle.classList.add("dragging");
+    document.body.style.cursor    = "ns-resize";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", e => {
+    if (!resizing) return;
+    const newH = Math.max(40, Math.min(window.innerHeight - 150, startH + (startY - e.clientY)));
+    appEl.style.gridTemplateRows = `44px 1fr 5px ${newH}px`;
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove("dragging");
+    document.body.style.cursor     = "";
+    document.body.style.userSelect = "";
+  });
+}
+
+// ── AI Chat ──────────────────────────────────────────────────────────────────
+
+const chatPanel    = document.getElementById("chatPanel");
+const chatMessages = document.getElementById("chatMessages");
+const chatTyping   = document.getElementById("chatTyping");
+const chatInput    = document.getElementById("chatInput");
+const chatSend     = document.getElementById("chatSend");
+const chatApiKey   = document.getElementById("chatApiKey");
+
+// Restore saved API key
+chatApiKey.value = localStorage.getItem("anthropic_api_key") || "";
+chatApiKey.addEventListener("change", () => {
+  localStorage.setItem("anthropic_api_key", chatApiKey.value.trim());
+});
+
+// Conversation history sent to the API (excludes system-note bubbles)
+let chatHistory = [];
+
+document.getElementById("btnChatAI").addEventListener("click", () => {
+  chatPanel.classList.add("open");
+  chatInput.focus();
+});
+
+document.getElementById("btnCloseChat").addEventListener("click", () => {
+  chatPanel.classList.remove("open");
+});
+
+document.getElementById("btnClearChat").addEventListener("click", () => {
+  chatHistory = [];
+  chatMessages.innerHTML = '<div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>';
+});
+
+// Auto-resize textarea
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+});
+
+// Send on Enter (Shift+Enter = newline)
+chatInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+
+chatSend.addEventListener("click", sendChat);
+
+function appendMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "chat-msg " + role;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+const CLAUDE_TOOLS = [
+  {
+    name: "add_node",
+    description: "Add an AWS service node. Populate cdkId, props, and notes fully — the props object must contain ALL fields listed in the CDK defaults for that service type so a downstream CDK agent needs zero guesswork.",
+    input_schema: {
+      type: "object",
+      properties: {
+        type:  { type: "string", description: "One of: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user" },
+        label: { type: "string", description: "Human-readable display name, e.g. 'User Auth Function'" },
+        cdkId: { type: "string", description: "PascalCase CDK construct ID, e.g. 'UserAuthFunction'. Must be unique in the stack." },
+        props: {
+          type: "object",
+          description: "Complete CDK deployment props. Always include ALL fields for the service type — use recommended defaults for anything not specified by the user. Key fields by type: lambda→{runtime,handler,code,memorySize,timeout,environment,tracing,removalPolicy}; dynamodb→{partitionKey,sortKey,billingMode,stream,pointInTimeRecovery,encryption,gsi,removalPolicy}; s3→{versioned,blockPublicAccess,encryption,removalPolicy,autoDeleteObjects}; sqs→{fifo,visibilityTimeout,messageRetentionPeriod,dlqRef,maxReceiveCount,encryption,removalPolicy}; rds→{engine,engineVersion,instanceClass,instanceSize,databaseName,multiAz,storageEncrypted,deletionProtection,vpcRef,removalPolicy}."
+        },
+        notes: { type: "string", description: "One or two sentences describing this resource's role in the architecture and any non-obvious configuration decisions." },
+        x:     { type: "number", description: "Canvas x position (auto-placed if omitted)" },
+        y:     { type: "number", description: "Canvas y position (auto-placed if omitted)" }
+      },
+      required: ["type", "label", "cdkId"]
+    }
+  },
+  {
+    name: "add_edge",
+    description: "Connect two nodes. Always specify relationship, iamActions, cdkMethod, and protocol so a CDK agent can generate correct IAM grants and integrations without guessing.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from_id:      { type: "string", description: "Source node id" },
+        to_id:        { type: "string", description: "Destination node id" },
+        label:        { type: "string", description: "Short display label shown on the diagram arrow, e.g. 'reads/writes'" },
+        relationship: {
+          type: "string",
+          enum: ["iam-grant","event-source-mapping","subscription","api-integration","origin","trigger","invoke","stream-consumer","read","write","read-write"],
+          description: "The AWS relationship type this arrow represents."
+        },
+        iamActions: {
+          type: "array", items: { type: "string" },
+          description: "Explicit IAM action strings needed for this connection, e.g. ['dynamodb:GetItem','dynamodb:PutItem','dynamodb:Query']. Empty array for non-IAM relationships."
+        },
+        cdkMethod: {
+          type: "string",
+          description: "The exact CDK L2 method call that wires this relationship, e.g. 'table.grantReadWriteData(fn)', 'fn.addEventSource(new SqsEventSource(queue,{batchSize:10}))', 'topic.addSubscription(new SqsSubscription(queue))'."
+        },
+        protocol: { type: "string", description: "Communication mechanism, e.g. 'AWS SDK v3', 'HTTPS', 'EventBridge rule', 'SQS trigger'." },
+        notes:    { type: "string", description: "Any non-obvious wiring details, ordering constraints, or permission boundaries relevant for CDK generation." }
+      },
+      required: ["from_id", "to_id", "relationship"]
+    }
+  },
+  {
+    name: "clear_diagram",
+    description: "Remove all nodes and edges. Call before building a fresh architecture.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
+    name: "set_metadata",
+    description: "Set diagram-level deployment metadata used by the CDK agent to initialise the Stack.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name:        { type: "string", description: "Human-readable diagram/architecture name" },
+        stackName:   { type: "string", description: "CloudFormation stack name, e.g. 'MyAppStack'" },
+        region:      { type: "string", description: "AWS region, e.g. 'us-east-1'" },
+        account:     { type: "string", description: "AWS account ID (12 digits). Use empty string if unknown." },
+        environment: { type: "string", description: "'dev', 'staging', or 'prod' — affects removalPolicy defaults" }
+      },
+      required: ["name"]
+    }
+  },
+  {
+    name: "remove_object",
+    description: "Remove a node (and its connected edges) or a single edge by id.",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "string", description: "The id of the node or edge to remove" } },
+      required: ["id"]
+    }
+  }
+];
+
+function autoPlace() {
+  const MIN_DIST = 300;
+  const candidates = [];
+  for (let row = 0; row < 8; row++)
+    for (let col = 0; col < 6; col++)
+      candidates.push({ x: 80 + col * 200, y: 80 + row * 180 });
+
+  for (const pt of candidates) {
+    const tooClose = state.nodes.some(n => {
+      const dx = n.x - pt.x, dy = n.y - pt.y;
+      return Math.sqrt(dx * dx + dy * dy) < MIN_DIST;
+    });
+    if (!tooClose) return pt;
+  }
+  const maxY = state.nodes.reduce((m, n) => Math.max(m, n.y), 0);
+  return { x: 80, y: maxY + 220 };
+}
+
+function executeTool(name, input) {
+  switch (name) {
+    case "add_node": {
+      const pos     = (input.x != null && input.y != null) ? input : autoPlace();
+      const type    = input.type in SERVICE_META ? input.type : "external";
+      const meta    = SERVICE_META[type] || { label: type };
+      const cdkMeta = CDK_META[type]    || { construct: null, module: null };
+      const label   = input.label || meta.label;
+      const n = {
+        id: uid("n"), type, label,
+        cdkConstruct: cdkMeta.construct,
+        cdkModule:    cdkMeta.module,
+        cdkId:        input.cdkId || toPascalCase(label),
+        notes:        input.notes || "",
+        x: Math.round(pos.x / 10) * 10,
+        y: Math.round(pos.y / 10) * 10,
+        // merge defaults → agent-supplied props (agent values win)
+        props: { ...(NODE_CDK_DEFAULTS[type] || {}), ...(input.props || {}) }
+      };
+      state.nodes.push(n);
+      render();
+      return { id: n.id, label: n.label };
+    }
+    case "add_edge": {
+      const src = state.nodes.find(n => n.id === input.from_id);
+      const dst = state.nodes.find(n => n.id === input.to_id);
+      if (!src) return { error: `Node ${input.from_id} not found` };
+      if (!dst) return { error: `Node ${input.to_id} not found` };
+      if (src.id === dst.id) return { error: "Cannot connect a node to itself" };
+      const e = {
+        id: uid("e"), from: src.id, to: dst.id,
+        label:        input.label        || "",
+        relationship: input.relationship || "invoke",
+        iamActions:   input.iamActions   || [],
+        cdkMethod:    input.cdkMethod    || "",
+        protocol:     input.protocol     || "",
+        notes:        input.notes        || ""
+      };
+      state.edges.push(e);
+      render();
+      return { id: e.id };
+    }
+    case "clear_diagram":
+      state = freshState(); selection = null; render();
+      return { ok: true };
+    case "set_metadata":
+      if (input.name)        state.metadata.name        = input.name;
+      if (input.stackName)   state.metadata.stackName   = input.stackName;
+      if (input.region)      state.metadata.region      = input.region;
+      if (input.account)     state.metadata.account     = input.account;
+      if (input.environment) state.metadata.environment = input.environment;
+      renderJson();
+      return { ok: true };
+    case "remove_object": {
+      const nodeIdx = state.nodes.findIndex(n => n.id === input.id);
+      if (nodeIdx !== -1) {
+        state.nodes.splice(nodeIdx, 1);
+        state.edges = state.edges.filter(e => e.from !== input.id && e.to !== input.id);
+        if (selection?.id === input.id) selection = null;
+        render();
+        return { ok: true, removed: "node" };
+      }
+      const edgeIdx = state.edges.findIndex(e => e.id === input.id);
+      if (edgeIdx !== -1) {
+        state.edges.splice(edgeIdx, 1);
+        if (selection?.id === input.id) selection = null;
+        render();
+        return { ok: true, removed: "edge" };
+      }
+      return { error: `No node or edge with id ${input.id}` };
+    }
+    default:
+      return { error: `Unknown tool: ${name}` };
+  }
+}
+
+async function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  const apiKey = chatApiKey.value.trim() || localStorage.getItem("anthropic_api_key") || "";
+  if (!apiKey) { appendMsg("error", "Please enter your Anthropic API key above."); return; }
+
+  chatInput.value = ""; chatInput.style.height = "auto"; chatSend.disabled = true;
+  appendMsg("user", text);
+  chatHistory.push({ role: "user", content: text });
+  chatTyping.classList.add("visible");
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  try { await runAgentLoop(apiKey); }
+  catch (err) { chatTyping.classList.remove("visible"); appendMsg("error", "Network error: " + err.message); }
+
+  chatSend.disabled = false; chatInput.focus();
+}
+
+// After the AI finishes a turn, push same-row nodes apart so edge labels fit in the gap.
+function autoSpaceNodes() {
+  if (state.nodes.length < 2) return;
+
+  const ROW_THRESH = 40;   // px: nodes within this y-distance share a row
+  const COL_THRESH = 60;   // px: nodes within this x-distance share a column
+  const MIN_H_GAP  = 60;   // minimum blank horizontal space between two boxes
+  const MIN_V_GAP  = 50;   // minimum blank vertical space between two boxes
+
+  let changed = false;
+
+  // helper: find any direct edge between two nodes
+  const edgeBetween = (a, b) =>
+    state.edges.find(e =>
+      (e.from === a.id && e.to === b.id) ||
+      (e.from === b.id && e.to === a.id)
+    );
+
+  // ── Horizontal pass: space out nodes that share a row ──
+  const rows = [];
+  for (const n of [...state.nodes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const row = rows.find(r => Math.abs(r[0].y - n.y) <= ROW_THRESH);
+    if (row) row.push(n);
+    else rows.push([n]);
+  }
+  for (const row of rows) {
+    row.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < row.length; i++) {
+      const prev = row[i - 1];
+      const curr = row[i];
+      const prevW = nodeWidth(prev);
+      const edge = edgeBetween(prev, curr);
+      let gap = MIN_H_GAP;
+      if (edge && edge.label) {
+        gap = Math.max(MIN_H_GAP, measureEdgeLabelWidth(edge.label) + 48);
+      }
+      const minX = prev.x + prevW + gap;
+      if (curr.x < minX) {
+        const shift = minX - curr.x;
+        for (let j = i; j < row.length; j++) {
+          row[j].x = Math.round((row[j].x + shift) / 10) * 10;
+        }
+        changed = true;
+      }
+    }
+  }
+
+  // ── Vertical pass: space out nodes that share a column ──
+  const cols = [];
+  for (const n of [...state.nodes].sort((a, b) => a.x - b.x || a.y - b.y)) {
+    const col = cols.find(c => Math.abs(c[0].x - n.x) <= COL_THRESH);
+    if (col) col.push(n);
+    else cols.push([n]);
+  }
+  for (const col of cols) {
+    col.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < col.length; i++) {
+      const prev = col[i - 1];
+      const curr = col[i];
+      const edge = edgeBetween(prev, curr);
+      let gap = MIN_V_GAP;
+      if (edge && edge.label) gap = Math.max(MIN_V_GAP, 40);
+      const minY = prev.y + NODE_H + gap;
+      if (curr.y < minY) {
+        const shift = minY - curr.y;
+        for (let j = i; j < col.length; j++) {
+          col[j].y = Math.round((col[j].y + shift) / 10) * 10;
+        }
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) render();
+}
+
+// Strip props from add_node tool inputs before storing in history —
+// props are already written to state.nodes, no need to replay them in the transcript.
+function slimContent(content) {
+  return content.map(block => {
+    if (block.type !== "tool_use" || block.name !== "add_node") return block;
+    const { props, ...rest } = block.input;
+    return { ...block, input: rest };
+  });
+}
+
+async function runAgentLoop(apiKey) {
+  // Build system prompt once per user turn, not on every tool-use round-trip.
+  const systemPrompt = buildSystemPrompt();
+
+  // Work on a local copy. We only flush to chatHistory once the turn ends cleanly,
+  // so a mid-turn API error never leaves chatHistory with an unpaired tool_use.
+  const turnMessages = [...chatHistory];
+
+  while (true) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system: systemPrompt,
+        tools: CLAUDE_TOOLS,
+        messages: turnMessages
+      })
+    });
+
+    chatTyping.classList.remove("visible");
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      appendMsg("error", "API error: " + (err.error?.message || res.statusText));
+      return; // chatHistory untouched — still valid for the next user message
+    }
+
+    const data = await res.json();
+    const content = data.content || [];
+
+    const texts = content.filter(b => b.type === "text").map(b => b.text).join("\n\n");
+    if (texts) appendMsg("assistant", texts);
+
+    turnMessages.push({ role: "assistant", content: slimContent(content) });
+
+    if (data.stop_reason !== "tool_use") {
+      // Commit the completed turn to the shared history.
+      chatHistory.length = 0;
+      chatHistory.push(...turnMessages);
+      autoSpaceNodes();
+      break;
+    }
+
+    const toolResults = [];
+    for (const block of content.filter(b => b.type === "tool_use")) {
+      appendMsg("system-note", `⚙ ${block.name}(${block.input.label || block.input.id || block.input.name || ""})`);
+      const result = executeTool(block.name, block.input);
+      toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
+    }
+
+    turnMessages.push({ role: "user", content: toolResults });
+    chatTyping.classList.add("visible");
+  }
+}
+
+const MODE_PROMPTS = {
+  minimal:    "COST MODE — Minimal: prioritize zero fixed costs. Use serverless-first (Lambda, DynamoDB, S3, API Gateway). Avoid VPCs, NAT gateways, and any always-on compute unless the use case strictly requires it. Set removalPolicy DESTROY on everything.",
+  simple:     "COST MODE — Simple: prefer managed serverless services but allow one always-on tier (e.g. a single-AZ RDS or a single Fargate service) if the use case needs it. No VPC unless required. removalPolicy RETAIN on stateful resources, DESTROY elsewhere.",
+  standard:   "COST MODE — Standard: production-ready but cost-conscious. Use a VPC with public and private subnets and a single NAT gateway. Single-AZ for databases unless load demands otherwise. Add SQS for async decoupling where appropriate. removalPolicy SNAPSHOT for databases, RETAIN for other stateful resources.",
+  enterprise: "COST MODE — Enterprise: assume high-availability and compliance requirements. Multi-AZ for all stateful resources, ElastiCache caching layer, ALB in front of compute, WAF, encryption in transit and at rest everywhere, CloudWatch alarms on all critical paths. removalPolicy SNAPSHOT for databases.",
+};
+
+function buildSystemPrompt() {
+  const includeDiagram = document.getElementById("chatIncludeDiagram").checked;
+  const mode = document.getElementById("chatMode").value;
+  let prompt = `You are an expert AWS solutions architect embedded in a diagram editor. Your output is consumed by a downstream CDK code-generation agent — every node and edge must be filled in completely so that agent needs zero guesswork.`;
+
+  if (mode && MODE_PROMPTS[mode]) prompt += `\n\n${MODE_PROMPTS[mode]}`;
+
+  prompt += `
+
+NODES — always call add_node with:
+• cdkId: PascalCase unique ID (e.g. "UserAuthFunction", "OrdersTable")
+• props: full CDK props object — include ALL fields for the service type, not just the ones the user mentioned. Fill unspecified fields with AWS recommended defaults. Key rules:
+  - lambda: set runtime (NODEJS_20_X/PYTHON_3_12/etc), handler, code path, memorySize, timeout, environment map, tracing "Active", removalPolicy
+  - dynamodb: set partitionKey {name,type}, sortKey if needed, billingMode, stream, pointInTimeRecovery true, encryption, removalPolicy "RETAIN" for prod / "DESTROY" for dev
+  - s3: set versioned, blockPublicAccess "BLOCK_ALL", encryption, removalPolicy, autoDeleteObjects
+  - sqs: set fifo, visibilityTimeout (match Lambda timeout if event source), messageRetentionPeriod, maxReceiveCount, dlqRef if applicable, encryption
+  - rds: set engine, engineVersion, instanceClass, instanceSize, databaseName, multiAz, storageEncrypted true, deletionProtection, removalPolicy "SNAPSHOT"
+  - All stateful resources (rds, dynamodb, s3, elasticache): default removalPolicy to "RETAIN" unless user says dev/demo
+• notes: 1–2 sentences explaining the resource's role and any non-obvious decisions
+
+EDGES — always call add_edge with:
+• relationship: one of [iam-grant, event-source-mapping, subscription, api-integration, origin, trigger, invoke, stream-consumer, read, write, read-write]
+• iamActions: explicit IAM action strings (e.g. ["dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query"]). Use [] only for non-IAM relationships.
+• cdkMethod: the exact CDK L2 call (e.g. "table.grantReadWriteData(fn)", "fn.addEventSource(new SqsEventSource(queue,{batchSize:10}))", "topic.addSubscription(new SqsSubscription(queue))")
+• protocol: how they communicate (AWS SDK v3 / HTTPS / EventBridge rule / SQS trigger / etc.)
+• notes: any wiring constraints or ordering dependencies
+
+METADATA — call set_metadata first with name, stackName, region, environment (dev/staging/prod).
+
+LAYOUT — left-to-right for data flow, top-to-bottom for tiers. Use x spacing ≥ 320px between same-row nodes. Always prefer too much space — a layout pass will not compress it.
+Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user.
+To remove a specific node or edge use remove_object(id). Only use clear_diagram to wipe everything.`;
+
+  if (includeDiagram) {
+    if (state.nodes.length > 0) {
+      const snap = {
+        name: state.metadata?.name,
+        nodes: state.nodes.map(n => ({ id: n.id, type: n.type, label: n.label })),
+        edges: state.edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label }))
+      };
+      prompt += `\n\nCurrent diagram:\n${JSON.stringify(snap, null, 2)}`;
+    } else {
+      prompt += `\n\nThe diagram is currently empty.`;
+    }
+  }
+  return prompt;
+}
+</script>
+</body>
+</html>

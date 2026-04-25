@@ -1,4 +1,3 @@
 node_modules/
-infra-diagram.html
 infra-diagram.state.json
 cdk-infrastructure/
