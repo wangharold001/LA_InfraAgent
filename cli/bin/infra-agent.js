@@ -63,21 +63,19 @@ const state = await runAgent(repoContext, userPrompt, apiKey, {
 
 console.log(`\n✅ Architecture generated: ${state.nodes.length} resources, ${state.edges.length} connections`);
 
-// Save diagram + open browser
-const diagramPath = writeAndOpen(state, outputPath);
-const stateJsonPath = outputPath.replace(/\.html$/, ".state.json");
-console.log(`📊 Diagram opened: ${diagramPath}`);
+// Save diagram + open browser via local server
+const { outputPath: diagramPath, stateJsonPath, port, closeServer } = await writeAndOpen(state, outputPath);
+console.log(`📊 Diagram opened: http://127.0.0.1:${port}`);
 console.log(`📄 State file:     ${stateJsonPath}`);
 
 // ── Wait for user to finish editing in the browser ──────────────────────────
 console.log("\n🖊️  Edit the diagram in your browser.");
-console.log("   When done, click Save JSON (or Cmd+S) and save to:");
-console.log(`   ${stateJsonPath}`);
-console.log("   Then press Enter here to continue.\n");
+console.log("   Changes save automatically. Press Enter here when ready.\n");
 
 const rlEdit = readline.createInterface({ input: process.stdin, output: process.stdout });
 await rlEdit.question("Press Enter when your diagram is ready...");
 rlEdit.close();
+closeServer();
 
 // Read updated state from the JSON file if the user saved changes
 let finalState = state;

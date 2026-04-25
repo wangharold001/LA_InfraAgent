@@ -815,13 +815,14 @@ function measureEdgeLabelWidth(text) {
 }
 
 const __STATE_JSON_PATH__ = null; // replaced by CLI renderer
+const __SERVER_PORT__ = null;     // replaced by CLI renderer
 
 let state = freshState();
 let selection = null;
 let viewport = { x: 0, y: 0, z: 1 };
 let fileName = "untitled.arch.json";
 
-// ── Auto-save via File System Access API ──────────────────────────────────
+// ── Auto-save ─────────────────────────────────────────────────────────────
 let _fileHandle = null;
 let _saveTimer  = null;
 
@@ -831,15 +832,40 @@ function _scheduleSave() {
 }
 
 async function _doSave() {
-  if (!_fileHandle) return;
   const el = document.getElementById("saveStatus");
+  const json = JSON.stringify(state, null, 2);
+
+  // Prefer local server (CLI mode) — no file picker needed
+  if (__SERVER_PORT__) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${__SERVER_PORT__}/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+      });
+      if (res.ok) {
+        el.textContent = "✓ saved";
+        el.style.color = "#1d9e75";
+      } else {
+        el.textContent = "⚠ save failed";
+        el.style.color = "#d85a30";
+      }
+    } catch {
+      el.textContent = "⚠ server unreachable";
+      el.style.color = "#d85a30";
+    }
+    return;
+  }
+
+  // Fallback: File System Access API (works on localhost / https)
+  if (!_fileHandle) return;
   try {
     const writable = await _fileHandle.createWritable();
-    await writable.write(JSON.stringify(state, null, 2));
+    await writable.write(json);
     await writable.close();
     el.textContent = "✓ " + _fileHandle.name;
     el.style.color = "#1d9e75";
-  } catch (e) {
+  } catch {
     el.textContent = "⚠ save failed";
     el.style.color = "#d85a30";
   }
@@ -847,7 +873,7 @@ async function _doSave() {
 
 async function _connectFile() {
   if (!window.showSaveFilePicker) {
-    alert("Auto-save requires Chrome or Edge (File System Access API). Use Save JSON to export manually.");
+    alert("File System Access API not available. Run via the CLI for automatic saving.");
     return;
   }
   const suggested = __STATE_JSON_PATH__
@@ -861,9 +887,7 @@ async function _connectFile() {
     const el = document.getElementById("saveStatus");
     el.textContent = "⟳ " + _fileHandle.name;
     el.style.color = "var(--muted)";
-    if (__STATE_JSON_PATH__) {
-      document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
-    }
+    if (__STATE_JSON_PATH__) document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
     _scheduleSave();
   } catch (e) {
     if (e.name !== "AbortError") console.error("File connect failed:", e);
@@ -1595,10 +1619,16 @@ function toMermaid(s) {
 
 render();
 
-// Show injected file path if CLI provided one
-if (__STATE_JSON_PATH__) {
+// Show save status based on mode
+if (__SERVER_PORT__) {
+  const el = document.getElementById("saveStatus");
+  el.textContent = "auto-saving";
+  el.style.color = "var(--muted)";
+  el.title = "Changes save automatically to the CLI";
+  if (__STATE_JSON_PATH__) document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
+} else if (__STATE_JSON_PATH__) {
   document.getElementById("jsonFilePath").textContent = __STATE_JSON_PATH__;
-  document.getElementById("saveStatus").title = "Auto-save target: " + __STATE_JSON_PATH__;
+  document.getElementById("saveStatus").title = "Click Save JSON to save changes";
 }
 
 // ── JSON pane resize ─────────────────────────────────────────────────────────
