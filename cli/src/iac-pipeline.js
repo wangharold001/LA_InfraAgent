@@ -140,8 +140,13 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
     );
 
     console.log("\n🔁 Redeploying with the patched files...");
+    const combinedErr = `${result.stderr || ""} ${result.stdout || ""}`;
+    const needsBootstrap =
+      result.phase === "bootstrap" ||
+      /bootstrap/i.test(combinedErr) ||
+      /toolkit stack/i.test(combinedErr);
     result = await runDeploy(cdkOutputDir, finalState.metadata, {
-      bootstrap: false,
+      bootstrap: needsBootstrap,
       skipDiff: true,
     });
   }
