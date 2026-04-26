@@ -1,20 +1,20 @@
 # infragen
 
-**Draw your AWS infrastructure. Deploy it.**
+**AWS infrastructure diagramming and deployment from the terminal.**
 
-Open a diagram editor, drag in AWS services, connect them — then press Enter. InfraAgent generates CDK code and deploys your stack to AWS.
+Design your AWS architecture visually, then deploy it — infragen handles CDK code generation and deployment automatically.
 
 ## Install
 
 ```bash
 npm install -g infragen
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-**Prerequisites:**
+**Also required:**
 - Node.js 18+
-- AWS CLI configured (`aws configure`)
+- AWS CLI (`aws configure`)
 - AWS CDK CLI (`npm install -g aws-cdk`)
-- Anthropic API key (`export ANTHROPIC_API_KEY=sk-ant-...`)
 
 ## Quick Start
 
@@ -22,105 +22,148 @@ npm install -g infragen
 diagram
 ```
 
-That's it. A diagram editor opens in your browser. Drag AWS services from the palette, draw connections between them, and use the built-in Claude chat to ask questions or request changes. When you're happy, press Enter in the terminal — InfraAgent generates CDK TypeScript code and walks you through deployment.
+Opens an interactive AWS diagram editor in your browser. Build your architecture, then press Enter in the terminal to generate CDK code and deploy.
+
+Or let Claude design it for you first:
+
+```bash
+infra-agent
+```
+
+Prompts you for what you want to build, generates an architecture, then opens the diagram so you can review and edit before deploying.
+
+---
 
 ## Commands
 
 ### `diagram`
 
-Open the visual diagram editor.
+Open the diagram editor for an existing project.
 
 ```bash
-diagram
-
-# Point at a specific project directory
-diagram /path/to/project
+diagram                        # current directory
+diagram /path/to/project       # specific directory
 ```
 
-The editor auto-saves as you work. When you press Enter, InfraAgent reads your diagram and runs the full pipeline: approval review → CDK generation → deploy to AWS.
-
-**In the editor:**
-- Drag services from the palette onto the canvas
-- Click and drag between nodes to draw connections
-- Click any node to edit its properties (memory, instance type, billing mode, etc.)
-- Open the chat panel to talk to Claude about your architecture
-- Toggle "Include codebase" to give Claude context from your existing repo
+Requires an `infra-diagram.html` in the directory (created by `infra-agent` on first run, or open the HTML file directly in a browser without the CLI). Press Enter in the terminal when ready — infragen reads the saved diagram and runs the pipeline.
 
 ### `infra-agent`
 
-Skip the diagram and start from a text prompt. Claude designs the architecture, then opens the diagram editor so you can review and adjust before deploying.
+Generate an architecture from a text prompt, then open the editor.
 
 ```bash
-infra-agent
-
-# Or point at a project for codebase context
-infra-agent /path/to/project
+infra-agent                    # current directory
+infra-agent /path/to/project   # reads repo context from that directory
 ```
 
-### `infra-decommission`
+Claude designs the diagram based on your prompt and any repo context it finds (`package.json`, config files, etc.), then opens the editor for you to review and adjust.
 
-Destroy all AWS resources created by InfraAgent.
-
-```bash
-infra-decommission
-
-# Or from a specific project directory
-infra-decommission /path/to/project
-```
-
-## The Pipeline
-
-Once you press Enter in the diagram editor:
-
-1. **Review** — InfraAgent shows every resource, connection, and IAM permission for approval
-2. **Generate** — Claude writes a complete CDK TypeScript project referencing AWS documentation
-3. **Deploy** — CDK bootstraps, synthesizes, and deploys your stack to AWS
-4. **Auto-repair** — If deployment fails, Claude diagnoses and patches the code automatically (up to 3 attempts)
-
-## Generation Modes (for `infra-agent`)
+**Generation modes:**
 
 | Mode | Description |
 |------|-------------|
-| `minimal` | Serverless only — Lambda, DynamoDB, S3, API Gateway. No VPC. |
-| `simple` | Serverless-first, one always-on tier allowed. |
-| `standard` | VPC, private subnets, SQS for async work. DB snapshots on delete. |
+| `minimal` | Serverless-only (Lambda, DynamoDB, S3, API Gateway). No VPC. `DESTROY` removal policy. |
+| `simple` | Serverless-first, one always-on tier allowed. No VPC unless required. |
+| `standard` | VPC, private subnets, single NAT gateway, SQS for async decoupling. |
 | `enterprise` | Multi-AZ, ElastiCache, ALB, WAF, full encryption, CloudWatch alarms. |
 
-## Supported AWS Services
+### `infra-decommission`
 
-Compute: Lambda, EC2, Fargate  
-Data: DynamoDB, RDS, S3, ElastiCache, OpenSearch, DocumentDB, Redshift, EFS  
-Messaging: SQS, SNS, Kinesis, EventBridge, Step Functions  
-API: API Gateway, AppSync, ALB, NLB  
-Network: VPC, CloudFront, Route 53, WAF, ACM  
-Security: Cognito, KMS, Secrets Manager  
+Destroy all AWS resources managed by infragen.
+
+```bash
+infra-decommission             # current directory
+infra-decommission /path/to/project
+```
+
+Runs `cdk destroy` after a confirmation prompt. Resources with deletion protection may need manual cleanup.
+
+---
+
+## The Diagram Editor
+
+The editor runs locally in your browser. It connects back to the CLI process for auto-save.
+
+**Canvas**
+- Drag AWS services from the left palette onto the canvas
+- Click and drag between nodes to draw a connection
+- Right-click a node to delete it
+- Drag a node to the trash icon to delete it
+- Search nodes with the top search bar
+- Focus mode (⤢) hides all panels for a clean view
+
+**Palette**
+AWS services organized by category: Compute, Data, Messaging, API, Network, Security.
+
+**Inspector** (right panel)
+Click any node or edge to edit its properties — runtime, memory, billing mode, instance type, IAM actions, CDK method, etc.
+
+**Chat** (right panel)
+Talk to Claude about your architecture. Toggle "Include current diagram" to give Claude full context of your current diagram. Select a generation mode to bias Claude's recommendations.
+
+**Billing** (right panel)
+Rough on-demand AWS cost estimate based on the services in your diagram, updated as you edit.
+
+**JSON pane** (bottom)
+The raw diagram state as editable JSON. Edit directly and press Cmd+S to apply changes to the canvas.
+
+**Export**
+- Download JSON — save the diagram state
+- Download Image (PNG) — export the canvas as an image
+
+---
+
+## The Deployment Pipeline
+
+After you press Enter in the terminal, infragen runs four phases:
+
+**Phase 2 — Review**  
+Prints every resource, connection, IAM action, and CDK method for your approval.
+
+**Phase 3 — CDK Generation**  
+An AI agent writes a complete CDK TypeScript project to `cdk-infrastructure/`, referencing AWS documentation for each service.
+
+**Phase 4 — Deploy**  
+Runs `cdk bootstrap` (if needed), `cdk diff`, and `cdk deploy`.
+
+**Phase 5 — Auto-repair**  
+If deployment fails, Claude diagnoses the error and patches the generated code. Retries up to 3 times. Session transcripts saved to `cdk-infrastructure/.infra-agent/`.
+
+---
+
+## Supported Services
+
+**Compute:** Lambda, EC2, Fargate  
+**Data:** DynamoDB, RDS, S3, ElastiCache, OpenSearch, DocumentDB, Redshift, EFS, Athena, Glue  
+**Messaging:** SQS, SNS, Kinesis, EventBridge, Step Functions, Scheduler, AppSync  
+**API:** API Gateway, ALB, NLB  
+**Network:** VPC, CloudFront, Route 53, WAF, ACM  
+**Security:** Cognito, KMS, Secrets Manager  
+
+---
 
 ## After Deployment
 
 ```bash
 cd cdk-infrastructure
-
-cdk diff      # Preview changes
-cdk deploy    # Deploy updates
+cdk diff      # preview changes
+cdk deploy    # redeploy
 ```
 
-Or to tear everything down:
+To tear down:
 
 ```bash
 infra-decommission
 ```
 
+---
+
 ## Troubleshooting
 
-**`ANTHROPIC_API_KEY not set`** — `export ANTHROPIC_API_KEY=sk-ant-your-key-here`
-
-**`CDK CLI not found`** — `npm install -g aws-cdk`
-
-**`AWS credentials not configured`** — `aws configure`
-
-**Bootstrap required (first deploy)** — answer yes when prompted, or run `cdk bootstrap` in `cdk-infrastructure/`
-
-**Deployment failed** — InfraAgent retries up to 3 times with Claude-assisted auto-repair. Transcripts saved to `cdk-infrastructure/.infra-agent/`
+**`ANTHROPIC_API_KEY not set`** → `export ANTHROPIC_API_KEY=sk-ant-...`  
+**`CDK CLI not found`** → `npm install -g aws-cdk`  
+**`AWS credentials not configured`** → `aws configure`  
+**Bootstrap required** → answer yes when prompted, or `cd cdk-infrastructure && cdk bootstrap`
 
 ---
 
