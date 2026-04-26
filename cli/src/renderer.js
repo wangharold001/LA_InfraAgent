@@ -3,7 +3,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
 import { startServer } from "./server.js";
-import { buildPaletteHtml, getDiagramServicePack } from "./diagram-services.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = path.resolve(__dirname, "../assets/diagram-editor.html");
@@ -19,13 +18,10 @@ export async function writeAndOpen(state, outputPath) {
 
   // Inject state and config into the cli-config script block in the HTML shell
   const html = fs.readFileSync(TEMPLATE, "utf8");
-  const packJson = JSON.stringify(getDiagramServicePack());
-  const injected = html
-    .replace(
-      `const __STATE_JSON_PATH__ = null;\nconst __SERVER_PORT__ = null;\nvar __DIAGRAM_STATE__ = null;\nvar __DIAGRAM_SERVICE_PACK__ = null;`,
-      `const __STATE_JSON_PATH__ = ${JSON.stringify(stateJsonPath)};\nconst __SERVER_PORT__ = ${port};\nvar __DIAGRAM_STATE__ = ${JSON.stringify(state)};\nvar __DIAGRAM_SERVICE_PACK__ = ${packJson};`
-    )
-    .replace("<!--INFRA_AGENT_PALETTE-->", buildPaletteHtml());
+  const injected = html.replace(
+    `const __STATE_JSON_PATH__ = null;\nconst __SERVER_PORT__ = null;\nvar __DIAGRAM_STATE__ = null;`,
+    `const __STATE_JSON_PATH__ = ${JSON.stringify(stateJsonPath)};\nconst __SERVER_PORT__ = ${port};\nvar __DIAGRAM_STATE__ = ${JSON.stringify(state)};`
+  );
 
   fs.writeFileSync(outputPath, injected, "utf8");
 

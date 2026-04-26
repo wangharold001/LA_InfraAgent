@@ -17,7 +17,7 @@
 
   .app {
     display: grid;
-    grid-template-columns: 148px 1fr 280px;
+    grid-template-columns: 180px 1fr 280px;
     grid-template-rows: 44px 1fr 5px 200px;
     height: 100vh;
     gap: 1px;
@@ -45,66 +45,25 @@
 
   .palette {
     background: var(--surface);
-    padding: 8px 6px;
+    padding: 12px;
     overflow-y: auto;
-    overflow-x: hidden;
   }
-  .palette-group { margin: 0 0 4px; border: none; }
-  .palette-summary {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-    font-weight: 600;
-    cursor: pointer;
-    list-style: none;
-    padding: 4px 2px 2px;
-    user-select: none;
-  }
-  .palette-summary::-webkit-details-marker { display: none; }
-  .palette-summary::before {
-    content: "";
-    display: inline-block;
-    width: 0;
-    height: 0;
-    border-left: 4px solid var(--muted);
-    border-top: 3px solid transparent;
-    border-bottom: 3px solid transparent;
-    margin-right: 4px;
-    transform: rotate(0deg);
-    transition: transform 0.12s ease;
-    vertical-align: middle;
-  }
-  .palette-group:not([open]) .palette-summary::before { transform: rotate(-90deg); }
-  .palette-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2px;
-    margin-bottom: 2px;
-  }
+  .palette h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
   .palette-item {
     display: flex;
     align-items: center;
-    gap: 3px;
-    padding: 3px 4px;
+    gap: 8px;
+    padding: 6px 8px;
+    margin-bottom: 2px;
     border: 1px solid transparent;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: grab;
     user-select: none;
-    font-size: 10px;
-    min-width: 0;
+    font-size: 13px;
   }
   .palette-item:hover { background: var(--bg); border-color: var(--line); }
   .palette-item:active { cursor: grabbing; }
-  .palette-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-  .palette-label {
-    font-size: 9px;
-    font-weight: 500;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .palette-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
 
   .canvas-wrap {
     background: var(--surface);

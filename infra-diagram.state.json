@@ -549,56 +549,6 @@
         "vpcRef": null,
         "removalPolicy": "DESTROY"
       }
-    },
-    {
-      "id": "n_6c6p4u",
-      "type": "vpc",
-      "label": "VPC",
-      "cdkConstruct": "aws_ec2.Vpc",
-      "cdkModule": "aws-cdk-lib/aws-ec2",
-      "cdkId": "Vpc",
-      "notes": "",
-      "x": 920,
-      "y": 490,
-      "props": {
-        "cidr": "10.0.0.0/16",
-        "maxAzs": 2,
-        "natGateways": 1,
-        "subnetConfiguration": [
-          {
-            "name": "Public",
-            "subnetType": "PUBLIC",
-            "cidrMask": 24
-          },
-          {
-            "name": "Private",
-            "subnetType": "PRIVATE_WITH_EGRESS",
-            "cidrMask": 24
-          }
-        ],
-        "removalPolicy": "DESTROY"
-      }
-    },
-    {
-      "id": "n_irobnc",
-      "type": "fargate",
-      "label": "Fargate",
-      "cdkConstruct": "aws_ecs_patterns.ApplicationLoadBalancedFargateService",
-      "cdkModule": "aws-cdk-lib/aws-ecs-patterns",
-      "cdkId": "Fargate",
-      "notes": "",
-      "x": -30,
-      "y": 80,
-      "props": {
-        "cpu": 256,
-        "memoryLimitMiB": 512,
-        "image": "amazon/amazon-ecs-sample",
-        "containerPort": 80,
-        "desiredCount": 1,
-        "assignPublicIp": false,
-        "vpcRef": null,
-        "removalPolicy": "DESTROY"
-      }
     }
   ],
   "edges": [
