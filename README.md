@@ -153,6 +153,52 @@ If deployment fails, Claude diagnoses and patches the generated code. Up to 3 at
 
 ---
 
+## How It Works — Technical Details
+
+### Three Claude Agents
+
+infragen runs three distinct Claude agents, each with its own tools and system prompt:
+
+**1. Architecture Agent** (`infra-agent` only)  
+Reads your prompt and repo context, then calls tools to build the diagram state: `add_node`, `add_edge`, `set_metadata`. Outputs a fully-specified graph with CDK IDs, IAM actions, and CDK L2 methods on every edge — so the next agent needs zero guesswork.
+
+**2. CDK Generation Agent**  
+Receives the diagram state and writes a complete CDK TypeScript project. Before writing each construct, it calls `aws_kb_retrieve` to look up the correct CDK L2 API, prop names, and integration patterns — the same documentation catalog as AWS MCP. This research-then-write loop means generated code matches official AWS patterns, not stale training data.
+
+```
+📚 aws_kb_retrieve("CDK Lambda Function TypeScript props")
+📚 aws_kb_retrieve("API Gateway HttpApi Lambda integration")
+📚 aws_kb_retrieve("DynamoDB TableV2 billing mode encryption")
+✎ lib/my-stack.ts  (4.1 KB)
+✎ bin/my-stack.ts
+✎ package.json
+```
+
+**3. Auto-Repair Agent**  
+If CDK deployment fails, this agent receives the error output (last 4 KB of stdout/stderr + CloudFormation failure events) and calls `read_file` / `propose_patch` to diagnose and fix the generated code in place. Patches are classified as SAFE (auto-applied) or RISKY (touches IAM, security group ingress, or removal policies — requires user approval).
+
+### IAM and CDK Wiring Per Edge
+
+Every connection in the diagram carries explicit IAM actions and the exact CDK L2 call needed to implement it. The architecture agent generates these upfront so the CDK agent can copy them directly:
+
+```
+Lambda → DynamoDB
+  relationship: iam-grant
+  iamActions:   ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"]
+  cdkMethod:    table.grantReadWriteData(fn)
+
+SQS → Lambda
+  relationship: event-source-mapping
+  iamActions:   []
+  cdkMethod:    fn.addEventSource(new SqsEventSource(queue, { batchSize: 10 }))
+```
+
+### Graph as the Interface
+
+The diagram state is the shared language between every component — the browser editor, the architecture agent, the CDK generation agent, and the approval review. Every agent reads and writes the same JSON schema, so humans and agents can hand off the same artifact without translation.
+
+---
+
 ## File Format
 
 Diagrams are saved as `infra-diagram.state.json`. Schema version `0.2.0`.

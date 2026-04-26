@@ -8,14 +8,14 @@ import { buildPaletteHtml, getDiagramServicePack } from "./diagram-services.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = path.resolve(__dirname, "../assets/diagram-editor.html");
 
-export async function writeAndOpen(state, outputPath) {
+export async function writeAndOpen(state, outputPath, repoContext = "") {
   const stateJsonPath = outputPath.replace(/\.html$/, ".state.json");
 
   // Write initial state JSON so the CLI can read it back after browser edits
   fs.writeFileSync(stateJsonPath, JSON.stringify(state, null, 2), "utf8");
 
   // Start local server — browser POSTs state changes to /state
-  const { server, port } = await startServer(outputPath, stateJsonPath);
+  const { server, port } = await startServer(outputPath, stateJsonPath, repoContext);
 
   // Inject state and config into the cli-config script block in the HTML shell
   const html = fs.readFileSync(TEMPLATE, "utf8");

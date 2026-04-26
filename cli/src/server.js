@@ -11,7 +11,7 @@ const MIME = {
   ".js":   "text/javascript; charset=utf-8",
 };
 
-export function startServer(htmlPath, stateJsonPath) {
+export function startServer(htmlPath, stateJsonPath, repoContext = "") {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
@@ -45,6 +45,12 @@ export function startServer(htmlPath, stateJsonPath) {
           }
           return;
         }
+      }
+
+      if (req.method === "GET" && req.url === "/context") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ context: repoContext }));
+        return;
       }
 
       if (req.method === "POST" && req.url === "/state") {

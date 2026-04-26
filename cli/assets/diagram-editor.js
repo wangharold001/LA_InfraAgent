@@ -1381,6 +1381,18 @@ chatApiKey.addEventListener("change", () => {
 // Conversation history sent to the API (excludes system-note bubbles)
 let chatHistory = [];
 
+let _repoContextCache = null;
+async function fetchRepoContext() {
+  if (_repoContextCache !== null) return _repoContextCache;
+  if (!__SERVER_PORT__) return (_repoContextCache = "");
+  try {
+    const r = await fetch(`http://127.0.0.1:${__SERVER_PORT__}/context`);
+    const d = await r.json();
+    _repoContextCache = d.context || "";
+  } catch { _repoContextCache = ""; }
+  return _repoContextCache;
+}
+
 // Keep focus behavior when switching to chat via right pane tabs.
 document.querySelectorAll(".right-tab").forEach((b) => {
   if (b.dataset.panel !== "chat") return;
@@ -1389,7 +1401,7 @@ document.querySelectorAll(".right-tab").forEach((b) => {
 
 document.getElementById("btnClearChat").addEventListener("click", () => {
   chatHistory = [];
-  chatMessages.innerHTML = '<div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>';
+  chatMessages.innerHTML = '<div class="chat-msg system-note">Ask me anything about your AWS architecture. Toggle the context options below to include your diagram or codebase.</div>';
 });
 
 // Auto-resize textarea
@@ -1603,7 +1615,10 @@ async function sendChat() {
   chatTyping.classList.add("visible");
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  try { await runAgentLoop(apiKey); }
+  const includeRepo = document.getElementById("chatIncludeRepo")?.checked;
+  const repoCtx = includeRepo ? await fetchRepoContext() : "";
+
+  try { await runAgentLoop(apiKey, repoCtx); }
   catch (err) { chatTyping.classList.remove("visible"); appendMsg("error", "Network error: " + err.message); }
 
   chatSend.disabled = false; chatInput.focus();
@@ -1695,9 +1710,9 @@ function slimContent(content) {
   });
 }
 
-async function runAgentLoop(apiKey) {
+async function runAgentLoop(apiKey, repoCtx = "") {
   // Build system prompt once per user turn, not on every tool-use round-trip.
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(repoCtx);
 
   // Work on a local copy. We only flush to chatHistory once the turn ends cleanly,
   // so a mid-turn API error never leaves chatHistory with an unpaired tool_use.
@@ -1764,7 +1779,7 @@ const MODE_PROMPTS = {
   enterprise: "COST MODE — Enterprise: assume high-availability and compliance requirements. Multi-AZ for all stateful resources, ElastiCache caching layer, ALB in front of compute, WAF, encryption in transit and at rest everywhere, CloudWatch alarms on all critical paths. removalPolicy SNAPSHOT for databases.",
 };
 
-function buildSystemPrompt() {
+function buildSystemPrompt(repoCtx = "") {
   const includeDiagram = document.getElementById("chatIncludeDiagram").checked;
   const mode = document.getElementById("chatMode").value;
   let prompt = `You are an expert AWS solutions architect embedded in a diagram editor. Your output is consumed by a downstream CDK code-generation agent — every node and edge must be filled in completely so that agent needs zero guesswork.`;
@@ -1809,6 +1824,9 @@ To remove a specific node or edge use remove_object(id). Only use clear_diagram 
     } else {
       prompt += `\n\nThe diagram is currently empty.`;
     }
+  }
+  if (repoCtx) {
+    prompt += `\n\nRepository context (user's existing codebase):\n${repoCtx}`;
   }
   return prompt;
 }
