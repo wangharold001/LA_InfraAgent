@@ -1,177 +1,19 @@
-const SERVICE_META = {
-  lambda:      { label: "Lambda",      color: "#EF9F27" },
-  ec2:         { label: "EC2",         color: "#EF9F27" },
-  fargate:     { label: "Fargate",     color: "#EF9F27" },
-  rds:         { label: "RDS",         color: "#378add" },
-  dynamodb:    { label: "DynamoDB",    color: "#378add" },
-  s3:          { label: "S3",          color: "#1d9e75" },
-  elasticache: { label: "ElastiCache", color: "#378add" },
-  sqs:         { label: "SQS",         color: "#d85a30" },
-  sns:         { label: "SNS",         color: "#d85a30" },
-  apigateway:  { label: "API Gateway", color: "#d85a30" },
-  alb:         { label: "ALB",         color: "#d85a30" },
-  vpc:         { label: "VPC",         color: "#888780" },
-  cloudfront:  { label: "CloudFront",  color: "#888780" },
-  external:    { label: "External",    color: "#6b6b64" },
-  user:        { label: "User",        color: "#6b6b64" },
-};
-
-// CDK construct mapping — used to stamp cdkConstruct on every node
-const CDK_META = {
-  lambda:      { construct: "aws_lambda.Function",                                    module: "aws-cdk-lib/aws-lambda" },
-  ec2:         { construct: "aws_ec2.Instance",                                       module: "aws-cdk-lib/aws-ec2" },
-  fargate:     { construct: "aws_ecs_patterns.ApplicationLoadBalancedFargateService", module: "aws-cdk-lib/aws-ecs-patterns" },
-  rds:         { construct: "aws_rds.DatabaseInstance",                               module: "aws-cdk-lib/aws-rds" },
-  dynamodb:    { construct: "aws_dynamodb.TableV2",                                   module: "aws-cdk-lib/aws-dynamodb" },
-  s3:          { construct: "aws_s3.Bucket",                                          module: "aws-cdk-lib/aws-s3" },
-  elasticache: { construct: "aws_elasticache.CfnReplicationGroup",                   module: "aws-cdk-lib/aws-elasticache" },
-  sqs:         { construct: "aws_sqs.Queue",                                          module: "aws-cdk-lib/aws-sqs" },
-  sns:         { construct: "aws_sns.Topic",                                          module: "aws-cdk-lib/aws-sns" },
-  apigateway:  { construct: "aws_apigatewayv2.HttpApi",                              module: "aws-cdk-lib/aws-apigatewayv2" },
-  alb:         { construct: "aws_elasticloadbalancingv2.ApplicationLoadBalancer",    module: "aws-cdk-lib/aws-elasticloadbalancingv2" },
-  vpc:         { construct: "aws_ec2.Vpc",                                            module: "aws-cdk-lib/aws-ec2" },
-  cloudfront:  { construct: "aws_cloudfront.Distribution",                            module: "aws-cdk-lib/aws-cloudfront" },
-  external:    { construct: null, module: null },
-  user:        { construct: null, module: null },
-};
-
-// Minimum CDK-complete props per service — agent fills these in, user can override in inspector
-const NODE_CDK_DEFAULTS = {
-  lambda: {
-    runtime: "NODEJS_20_X",
-    handler: "index.handler",
-    code: "lambda/handler",
-    memorySize: 512,
-    timeout: 29,
-    environment: {},
-    tracing: "Active",
-    reservedConcurrentExecutions: null,
-    layers: [],
-    vpcRef: null,
-    removalPolicy: "DESTROY"
-  },
-  ec2: {
-    instanceType: "T3_MICRO",
-    machineImage: "AMAZON_LINUX_2023",
-    keyPairName: null,
-    vpcRef: null,
-    associatePublicIpAddress: false,
-    removalPolicy: "DESTROY"
-  },
-  fargate: {
-    cpu: 256,
-    memoryLimitMiB: 512,
-    image: "amazon/amazon-ecs-sample",
-    containerPort: 80,
-    desiredCount: 1,
-    assignPublicIp: false,
-    vpcRef: null,
-    removalPolicy: "DESTROY"
-  },
-  rds: {
-    engine: "POSTGRES",
-    engineVersion: "15.4",
-    instanceClass: "T3",
-    instanceSize: "MICRO",
-    databaseName: "appdb",
-    multiAz: false,
-    storageEncrypted: true,
-    allocatedStorage: 20,
-    deletionProtection: false,
-    vpcRef: null,
-    removalPolicy: "SNAPSHOT"
-  },
-  dynamodb: {
-    partitionKey: { name: "pk", type: "STRING" },
-    sortKey: null,
-    billingMode: "PAY_PER_REQUEST",
-    stream: "NONE",
-    pointInTimeRecovery: true,
-    encryption: "AWS_MANAGED",
-    gsi: [],
-    removalPolicy: "RETAIN"
-  },
-  s3: {
-    versioned: false,
-    blockPublicAccess: "BLOCK_ALL",
-    encryption: "S3_MANAGED",
-    cors: [],
-    lifecycleRules: [],
-    removalPolicy: "RETAIN",
-    autoDeleteObjects: false
-  },
-  elasticache: {
-    engine: "redis",
-    cacheNodeType: "cache.t3.micro",
-    numCacheNodes: 1,
-    automaticFailoverEnabled: false,
-    atRestEncryptionEnabled: true,
-    transitEncryptionEnabled: true,
-    vpcRef: null,
-    removalPolicy: "DESTROY"
-  },
-  sqs: {
-    fifo: false,
-    visibilityTimeout: 30,
-    messageRetentionPeriod: 345600,
-    receiveMessageWaitTime: 0,
-    dlqRef: null,
-    maxReceiveCount: 3,
-    encryption: "KMS_MANAGED",
-    removalPolicy: "DESTROY"
-  },
-  sns: {
-    fifo: false,
-    contentBasedDeduplication: false,
-    masterKey: null,
-    removalPolicy: "DESTROY"
-  },
-  apigateway: {
-    apiType: "HTTP",
-    stageName: "prod",
-    auth: "NONE",
-    cors: true,
-    throttlingBurstLimit: 100,
-    throttlingRateLimit: 50,
-    removalPolicy: "DESTROY"
-  },
-  alb: {
-    internetFacing: true,
-    targetType: "IP",
-    healthCheckPath: "/health",
-    listenerPort: 443,
-    listenerProtocol: "HTTPS",
-    vpcRef: null,
-    removalPolicy: "DESTROY"
-  },
-  vpc: {
-    cidr: "10.0.0.0/16",
-    maxAzs: 2,
-    natGateways: 1,
-    subnetConfiguration: [
-      { name: "Public",  subnetType: "PUBLIC",               cidrMask: 24 },
-      { name: "Private", subnetType: "PRIVATE_WITH_EGRESS",  cidrMask: 24 }
-    ],
-    removalPolicy: "DESTROY"
-  },
-  cloudfront: {
-    priceClass: "PRICE_CLASS_100",
-    defaultRootObject: "index.html",
-    httpVersion: "HTTP2",
-    certificate: null,
-    webAclId: null,
-    removalPolicy: "DESTROY"
-  },
-  external: { endpoint: "", authType: "NONE" },
-  user:     { authType: "COGNITO" },
-};
-
-// Valid edge relationship types
-const EDGE_RELATIONSHIPS = [
-  "iam-grant", "event-source-mapping", "subscription",
-  "api-integration", "origin", "trigger", "invoke",
-  "stream-consumer", "read", "write", "read-write"
-];
+/** Injected by InfraAgent renderer (see diagram-services.js). */
+const _pack =
+  typeof __DIAGRAM_SERVICE_PACK__ !== "undefined" &&
+  __DIAGRAM_SERVICE_PACK__ &&
+  __DIAGRAM_SERVICE_PACK__.SERVICE_META
+    ? __DIAGRAM_SERVICE_PACK__
+    : null;
+if (!_pack || !Object.keys(_pack.SERVICE_META || {}).length) {
+  console.error(
+    "[InfraAgent] Diagram service pack missing. Run `infra-agent` or `diagram` from the repo so the HTML is hydrated with __DIAGRAM_SERVICE_PACK__."
+  );
+}
+const SERVICE_META = _pack?.SERVICE_META || {};
+const CDK_META = _pack?.CDK_META || {};
+const NODE_CDK_DEFAULTS = _pack?.NODE_CDK_DEFAULTS || {};
+const EDGE_RELATIONSHIPS = _pack?.EDGE_RELATIONSHIPS || [];
 
 const NODE_MIN_W = 140;
 const NODE_H = 56;
@@ -354,7 +196,9 @@ function renderNode(n) {
   g.dataset.nodeId = n.id;
 
   g.appendChild(svg("rect", { class: "node-rect", x: 0, y: 0, width: nw, height: NODE_H, rx: 4 }));
-  g.appendChild(svg("use", { href: "#icon-" + n.type, x: 8, y: (NODE_H - 24) / 2, width: 24, height: 24, "pointer-events": "none" }));
+  const iconId = "icon-" + n.type;
+  const iconHref = document.getElementById(iconId) ? "#" + iconId : "#icon-generic-aws";
+  g.appendChild(svg("use", { href: iconHref, x: 8, y: (NODE_H - 24) / 2, width: 24, height: 24, "pointer-events": "none" }));
 
   const title = svg("text", { class: "node-title", x: 40, y: NODE_H / 2 - 4 });
   title.textContent = n.label || meta.label;
@@ -1000,7 +844,7 @@ const CLAUDE_TOOLS = [
     input_schema: {
       type: "object",
       properties: {
-        type:  { type: "string", description: "One of: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user" },
+        type:  { type: "string", description: "One of: " + Object.keys(SERVICE_META).sort().join(", ") },
         label: { type: "string", description: "Human-readable display name, e.g. 'User Auth Function'" },
         cdkId: { type: "string", description: "PascalCase CDK construct ID, e.g. 'UserAuthFunction'. Must be unique in the stack." },
         props: {
@@ -1370,7 +1214,8 @@ EDGES — always call add_edge with:
 METADATA — call set_metadata first with name, stackName, region, environment (dev/staging/prod).
 
 LAYOUT — left-to-right for data flow, top-to-bottom for tiers. Use x spacing ≥ 320px between same-row nodes. Always prefer too much space — a layout pass will not compress it.
-Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user.
+Valid node types: ${Object.keys(SERVICE_META).sort().join(", ")}.
+For unfamiliar services, call aws_kb_retrieve with the CDK module name (same catalog as AWS MCP / AWS documentation knowledge base) before wiring props and edges.
 To remove a specific node or edge use remove_object(id). Only use clear_diagram to wipe everything.`;
 
   if (includeDiagram) {

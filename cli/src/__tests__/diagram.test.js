@@ -19,7 +19,7 @@ describe("add_node", () => {
   });
 
   it("falls back to 'external' for unknown types", () => {
-    d.executeTool("add_node", { type: "stepfunctions", label: "Workflow" });
+    d.executeTool("add_node", { type: "madeupservice_xyz", label: "Workflow" });
     expect(d.state.nodes[0].type).toBe("external");
   });
 

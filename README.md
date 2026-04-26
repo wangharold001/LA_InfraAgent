@@ -93,15 +93,13 @@ InfraAgent is a single self-contained HTML file. There is nothing to install.
 
 ### Palette — Adding Services
 
-The left sidebar lists all supported AWS services grouped by category:
+The left sidebar lists supported AWS services in **collapsible categories** with a **two-column compact grid** (abbreviated labels; hover for the full service name). Drag any chip onto the canvas to place a node.
 
-- **Compute** — Lambda, EC2, Fargate
-- **Data** — RDS, DynamoDB, S3, ElastiCache
-- **Integration** — SQS, SNS, API Gateway, ALB
-- **Network** — VPC, CloudFront
-- **Other** — External (third-party system), User (client/end-user)
+Categories include **Compute**, **Data** (RDS, DynamoDB, S3, ElastiCache, OpenSearch, DocumentDB, Redshift, EFS, Athena, Glue), **Integration** (SQS, SNS, Kinesis, EventBridge, Step Functions, Scheduler, AppSync), **Network** (VPC, CloudFront, API Gateway, ALB, NLB, Route 53, WAF, ACM), **Identity & secrets** (Cognito, KMS, Secrets Manager), and **Other** (External, User).
 
-**To add a service:** click and drag any item from the palette onto the canvas. The node appears where you drop it and is immediately selected.
+To add or change the canonical type list, CDK construct mapping, and default `props`, edit [`cli/src/diagram-services.js`](cli/src/diagram-services.js) (the CLI injects this pack into generated diagram HTML).
+
+**To add a service:** click and drag any palette item onto the canvas. The node appears where you drop it and is immediately selected.
 
 ---
 

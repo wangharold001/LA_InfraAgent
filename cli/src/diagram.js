@@ -1,3 +1,13 @@
+import {
+  SERVICE_META,
+  CDK_META,
+  NODE_CDK_DEFAULTS,
+  EDGE_RELATIONSHIPS,
+  VALID_NODE_TYPES_PROMPT,
+} from "./diagram-services.js";
+
+export { EDGE_RELATIONSHIPS };
+
 function uid(prefix) {
   return prefix + "_" + Math.random().toString(36).slice(2, 8);
 }
@@ -9,66 +19,6 @@ function toPascalCase(str) {
     .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join("");
 }
-
-const SERVICE_META = {
-  lambda:      { label: "Lambda" },
-  ec2:         { label: "EC2" },
-  fargate:     { label: "Fargate" },
-  rds:         { label: "RDS" },
-  dynamodb:    { label: "DynamoDB" },
-  s3:          { label: "S3" },
-  elasticache: { label: "ElastiCache" },
-  sqs:         { label: "SQS" },
-  sns:         { label: "SNS" },
-  apigateway:  { label: "API Gateway" },
-  alb:         { label: "ALB" },
-  vpc:         { label: "VPC" },
-  cloudfront:  { label: "CloudFront" },
-  external:    { label: "External" },
-  user:        { label: "User" },
-};
-
-const CDK_META = {
-  lambda:      { construct: "aws_lambda.Function",                                    module: "aws-cdk-lib/aws-lambda" },
-  ec2:         { construct: "aws_ec2.Instance",                                       module: "aws-cdk-lib/aws-ec2" },
-  fargate:     { construct: "aws_ecs_patterns.ApplicationLoadBalancedFargateService", module: "aws-cdk-lib/aws-ecs-patterns" },
-  rds:         { construct: "aws_rds.DatabaseInstance",                               module: "aws-cdk-lib/aws-rds" },
-  dynamodb:    { construct: "aws_dynamodb.TableV2",                                   module: "aws-cdk-lib/aws-dynamodb" },
-  s3:          { construct: "aws_s3.Bucket",                                          module: "aws-cdk-lib/aws-s3" },
-  elasticache: { construct: "aws_elasticache.CfnReplicationGroup",                    module: "aws-cdk-lib/aws-elasticache" },
-  sqs:         { construct: "aws_sqs.Queue",                                          module: "aws-cdk-lib/aws-sqs" },
-  sns:         { construct: "aws_sns.Topic",                                          module: "aws-cdk-lib/aws-sns" },
-  apigateway:  { construct: "aws_apigatewayv2.HttpApi",                               module: "aws-cdk-lib/aws-apigatewayv2" },
-  alb:         { construct: "aws_elasticloadbalancingv2.ApplicationLoadBalancer",     module: "aws-cdk-lib/aws-elasticloadbalancingv2" },
-  vpc:         { construct: "aws_ec2.Vpc",                                            module: "aws-cdk-lib/aws-ec2" },
-  cloudfront:  { construct: "aws_cloudfront.Distribution",                            module: "aws-cdk-lib/aws-cloudfront" },
-  external:    { construct: null, module: null },
-  user:        { construct: null, module: null },
-};
-
-const NODE_CDK_DEFAULTS = {
-  lambda:      { runtime: "NODEJS_20_X", handler: "index.handler", code: "lambda/handler", memorySize: 512, timeout: 29, environment: {}, tracing: "Active", reservedConcurrentExecutions: null, layers: [], vpcRef: null, logRemovalPolicy: "DESTROY" },
-  ec2:         { instanceType: "T3_MICRO", machineImage: "AMAZON_LINUX_2023", keyPairName: null, vpcRef: null, associatePublicIpAddress: false },
-  fargate:     { cpu: 256, memoryLimitMiB: 512, image: "amazon/amazon-ecs-sample", containerPort: 80, desiredCount: 1, assignPublicIp: false, vpcRef: null },
-  rds:         { engine: "POSTGRES", engineVersion: "15.4", instanceClass: "T3", instanceSize: "MICRO", databaseName: "appdb", multiAz: false, storageEncrypted: true, allocatedStorage: 20, deletionProtection: false, vpcRef: null, removalPolicy: "SNAPSHOT" },
-  dynamodb:    { partitionKey: { name: "pk", type: "STRING" }, sortKey: null, billingMode: "PAY_PER_REQUEST", stream: "NONE", pointInTimeRecovery: true, encryption: "AWS_MANAGED", gsi: [], removalPolicy: "RETAIN" },
-  s3:          { versioned: false, blockPublicAccess: "BLOCK_ALL", encryption: "S3_MANAGED", cors: [], lifecycleRules: [], removalPolicy: "RETAIN", autoDeleteObjects: false },
-  elasticache: { engine: "redis", cacheNodeType: "cache.t3.micro", numCacheNodes: 1, automaticFailoverEnabled: false, atRestEncryptionEnabled: true, transitEncryptionEnabled: true, vpcRef: null },
-  sqs:         { fifo: false, visibilityTimeout: 30, messageRetentionPeriod: 345600, receiveMessageWaitTime: 0, dlqRef: null, maxReceiveCount: 3, encryption: "KMS_MANAGED" },
-  sns:         { fifo: false, contentBasedDeduplication: false, masterKey: null },
-  apigateway:  { apiType: "HTTP", stageName: "prod", auth: "NONE", cors: true, throttlingBurstLimit: 100, throttlingRateLimit: 50 },
-  alb:         { internetFacing: true, targetType: "IP", healthCheckPath: "/health", listenerPort: 443, listenerProtocol: "HTTPS", vpcRef: null },
-  vpc:         { cidr: "10.0.0.0/16", maxAzs: 2, natGateways: 1, subnetConfiguration: [{ name: "Public", subnetType: "PUBLIC", cidrMask: 24 }, { name: "Private", subnetType: "PRIVATE_WITH_EGRESS", cidrMask: 24 }] },
-  cloudfront:  { priceClass: "PRICE_CLASS_100", defaultRootObject: "index.html", httpVersion: "HTTP2", certificate: null, webAclId: null },
-  external:    { endpoint: "", authType: "NONE" },
-  user:        { authType: "COGNITO" },
-};
-
-export const EDGE_RELATIONSHIPS = [
-  "iam-grant", "event-source-mapping", "subscription",
-  "api-integration", "origin", "trigger", "invoke",
-  "stream-consumer", "read", "write", "read-write",
-];
 
 const MIN_DIST = 300;
 
@@ -104,7 +54,7 @@ export function createDiagram() {
         const type    = input.type in SERVICE_META ? input.type : "external";
         const meta    = SERVICE_META[type];
         const cdkMeta = CDK_META[type] || { construct: null, module: null };
-        const label   = input.label || meta.label;
+        const label = input.label || meta.label;
         const n = {
           id: uid("n"), type, label,
           cdkConstruct: cdkMeta.construct,
@@ -173,7 +123,7 @@ export const TOOLS = [
     input_schema: {
       type: "object",
       properties: {
-        type:  { type: "string", description: "One of: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user" },
+        type:  { type: "string", description: `One of: ${VALID_NODE_TYPES_PROMPT}` },
         label: { type: "string", description: "Human-readable display name, e.g. 'User Auth Function'" },
         cdkId: { type: "string", description: "PascalCase CDK construct ID, e.g. 'UserAuthFunction'. Must be unique in the stack." },
         props: {
