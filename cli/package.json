@@ -4,9 +4,9 @@
   "description": "AI-powered AWS infrastructure agent: from prompt to deployed CDK code",
   "type": "module",
   "bin": {
-    "infra-agent": "./bin/infra-agent.js",
-    "infra-decommission": "./bin/infra-decommission.js",
-    "diagram": "./bin/diagram.js"
+    "infra-agent": "bin/infra-agent.js",
+    "infra-decommission": "bin/infra-decommission.js",
+    "diagram": "bin/diagram.js"
   },
   "files": [
     "bin",
