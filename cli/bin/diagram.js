@@ -4,11 +4,12 @@ import fs from "fs";
 import readline from "readline/promises";
 import { writeAndOpen } from "../src/renderer.js";
 import { runIaCPipeline } from "../src/iac-pipeline.js";
+import { readRepo } from "../src/reader.js";
 
 const cwd = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd();
 const htmlPath     = path.join(cwd, "infra-diagram.html");
 const stateJsonPath = path.join(cwd, "infra-diagram.state.json");
-const cdkOutputDir  = path.join(cwd, "cdk-infrastructure");
+const cdkOutputDir  = path.join(cwd, "terraform-infrastructure");
 
 if (!fs.existsSync(htmlPath)) {
   console.error(`No infra-diagram.html found in ${cwd}`);
@@ -32,7 +33,11 @@ if (fs.existsSync(stateJsonPath)) {
 }
 
 // Re-inject current state + live server port into the HTML so auto-save works.
-const { port, closeServer } = await writeAndOpen(initialState, htmlPath);
+process.stdout.write("📂 Reading repository context... ");
+const repoContext = readRepo(cwd);
+console.log(repoContext ? "done." : "no source files found.");
+
+const { port, closeServer } = await writeAndOpen(initialState, htmlPath, repoContext);
 
 console.log(`\nDiagram open at http://127.0.0.1:${port}`);
 console.log("Edit it in the browser. Changes save automatically.");

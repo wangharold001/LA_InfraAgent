@@ -18,25 +18,23 @@ export async function getApproval(state) {
 
   console.log(`\n🏗️  Resources (${state.nodes.length} nodes):`);
 
-  // Group nodes by type
-  const byType = {};
+  // Group nodes by provider
+  const byProvider = {};
   for (const node of state.nodes) {
-    if (!byType[node.type]) byType[node.type] = [];
-    byType[node.type].push(node);
+    const p = node.provider || "aws";
+    if (!byProvider[p]) byProvider[p] = [];
+    byProvider[p].push(node);
   }
 
-  for (const [type, nodes] of Object.entries(byType)) {
-    console.log(`\n   ${type.toUpperCase()}:`);
+  const providerLabels = { aws: "AWS", azure: "Azure", gcp: "GCP", generic: "Generic" };
+  for (const [provider, nodes] of Object.entries(byProvider)) {
+    console.log(`\n   ${providerLabels[provider] || provider.toUpperCase()}:`);
     for (const node of nodes) {
-      console.log(`     • ${node.label} (${node.cdkId})`);
-      if (node.notes) {
-        console.log(`       ${node.notes}`);
-      }
-      // Show key props
+      console.log(`     • ${node.label} (${node.tfId || node.type})`);
+      if (node.tfResource) console.log(`       Terraform: ${node.tfResource}`);
+      if (node.notes) console.log(`       ${node.notes}`);
       const keyProps = getKeyProps(node);
-      if (keyProps.length > 0) {
-        console.log(`       Props: ${keyProps.join(", ")}`);
-      }
+      if (keyProps.length > 0) console.log(`       Props: ${keyProps.join(", ")}`);
     }
   }
 
@@ -46,11 +44,11 @@ export async function getApproval(state) {
     const to = state.nodes.find(n => n.id === edge.to);
     console.log(`   ${from?.label || edge.from} → ${to?.label || edge.to}`);
     console.log(`     Relationship: ${edge.relationship}`);
-    if (edge.iamActions && edge.iamActions.length > 0) {
-      console.log(`     IAM Actions: ${edge.iamActions.join(", ")}`);
+    if (edge.permissions && edge.permissions.length > 0) {
+      console.log(`     Permissions: ${edge.permissions.join(", ")}`);
     }
-    if (edge.cdkMethod) {
-      console.log(`     CDK: ${edge.cdkMethod}`);
+    if (edge.tfRef) {
+      console.log(`     Terraform: ${edge.tfRef}`);
     }
   }
 

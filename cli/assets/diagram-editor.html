@@ -188,7 +188,7 @@ var __DIAGRAM_SERVICE_PACK__ = null;
           </div>
 
           <div class="chat-messages" id="chatMessages">
-            <div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>
+            <div class="chat-msg system-note">Ask me anything about your AWS architecture. Your current diagram is always included. Enable "Include codebase" to also share your local repo files.</div>
           </div>
 
           <div class="chat-typing" id="chatTyping">
@@ -212,8 +212,8 @@ var __DIAGRAM_SERVICE_PACK__ = null;
             </div>
             <div class="chat-context-row">
               <label>
-                <input type="checkbox" id="chatIncludeDiagram" checked>
-                Include current diagram as context
+                <input type="checkbox" id="chatIncludeRepo">
+                Include codebase
               </label>
             </div>
             <div class="chat-compose">

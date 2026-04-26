@@ -1,0 +1,45 @@
+# Terraform state files — NEVER commit state to source control
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform plan files — may contain secrets
+*.tfplan
+*.plan
+
+# Terraform working directory
+.terraform/
+.terraform.lock.hcl
+
+# Crash log
+crash.log
+crash.*.log
+
+# Override files (local developer overrides)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform vars files that may contain secrets
+*.tfvars
+*.tfvars.json
+!example.tfvars       # keep the example file checked in
+
+# Terraform CLI configuration (may contain token)
+.terraformrc
+terraform.rc
+
+# macOS
+.DS_Store
+
+# Editor temp files
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# AWS credentials — should never be in this directory but guard anyway
+.aws/
+credentials

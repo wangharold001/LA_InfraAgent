@@ -176,10 +176,15 @@
     min-width: 0;
   }
   .palette-shell { display: flex; width: 100%; min-width: 0; }
-  .palette-cats {
-    width: fit-content;
-    min-width: 92px;
+  .palette-left-col {
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid var(--line);
+    min-width: 92px;
+    width: fit-content;
+  }
+  .palette-cats {
+    flex: 1;
     padding: 6px 6px 8px;
     display: flex;
     flex-direction: column;
@@ -215,6 +220,32 @@
   }
   .palette-cat:hover { background: var(--bg); border-color: var(--line); }
   .palette-cat.active { background: var(--sel-bg); border-color: var(--sel); }
+
+  .palette-cloud-toggles {
+    display: flex;
+    gap: 3px;
+    padding: 6px 6px 4px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .palette-cloud-btn {
+    flex: 1;
+    padding: 4px 6px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-transform: uppercase;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .palette-cloud-btn:hover { background: var(--bg); color: var(--ink); }
+  .palette-cloud-btn[data-cloud="aws"].active  { background: #FF9900; border-color: #FF9900; color: #fff; }
+  .palette-cloud-btn[data-cloud="azure"].active { background: #0078D4; border-color: #0078D4; color: #fff; }
+  .palette-cloud-btn[data-cloud="gcp"].active  { background: #1a73e8; border-color: #1a73e8; color: #fff; }
 
   .palette-services {
     flex: 1;

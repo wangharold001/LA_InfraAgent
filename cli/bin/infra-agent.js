@@ -9,7 +9,7 @@ import { runIaCPipeline } from "../src/iac-pipeline.js";
 
 const repoRoot = path.resolve(process.argv[2] || process.cwd());
 const outputPath = path.join(repoRoot, "infra-diagram.html");
-const cdkOutputDir = path.join(repoRoot, "cdk-infrastructure");
+const cdkOutputDir = path.join(repoRoot, "terraform-infrastructure");
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {
@@ -62,7 +62,7 @@ const state = await runAgent(repoContext, userPrompt, apiKey, {
 console.log(`\n✅ Architecture generated: ${state.nodes.length} resources, ${state.edges.length} connections`);
 
 // Save diagram + open browser via local server
-const { outputPath: diagramPath, stateJsonPath, port, closeServer } = await writeAndOpen(state, outputPath);
+const { outputPath: diagramPath, stateJsonPath, port, closeServer } = await writeAndOpen(state, outputPath, repoContext);
 console.log(`📊 Diagram opened: http://127.0.0.1:${port}`);
 console.log(`📄 State file:     ${stateJsonPath}`);
 

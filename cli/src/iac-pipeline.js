@@ -3,17 +3,16 @@ import fs from "fs";
 import path from "path";
 import { getApproval } from "./approval.js";
 import {
-  generateCDKCode,
+  generateTerraformCode,
   REPAIR_SYSTEM_PROMPT,
-  REPAIR_TOOLS,
-} from "./cdk-generator.js";
+  generateReadme,
+} from "./tf-generator.js";
+import { REPAIR_TOOLS } from "./tf-tools.js";
 import {
   runDeploy,
-  getRecentStackFailureEvents,
-  generateReadme,
   tail,
 } from "./deployer.js";
-import { classifyPatch } from "./cdk-tools.js";
+import { classifyPatch, getRecentTFFailureEvents } from "./tf-tools.js";
 
 const MAX_REPAIR_ATTEMPTS = 3;
 const LOG_TAIL_BYTES = 4000;
@@ -38,19 +37,18 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
   let agent;
   let generatedFiles;
   try {
-    const out = await generateCDKCode(finalState, cdkOutputDir, apiKey);
+    const out = await generateTerraformCode(finalState, cdkOutputDir, apiKey);
     agent = out.agent;
     generatedFiles = out.generatedFiles;
   } catch (error) {
-    console.error("\n❌ CDK code generation failed!");
+    console.error("\n❌ Terraform code generation failed!");
     console.error(error.message);
     return false;
   }
-  console.log(`\n✅ Generated ${generatedFiles.length} CDK files:`);
+  console.log(`\n✅ Generated ${generatedFiles.length} Terraform files:`);
   for (const file of generatedFiles) console.log(`   - ${file}`);
-  generateReadme(cdkOutputDir, finalState.metadata);
-  console.log(`   - README.md`);
-  console.log(`\n📁 CDK project location: ${cdkOutputDir}`);
+  if (!generatedFiles.includes("README.md")) generateReadme(cdkOutputDir, finalState.metadata);
+  console.log(`\n📁 Terraform project location: ${cdkOutputDir}`);
 
   // ---------------------------------------------------------------------------
   // PHASE 4: Deployment (and PHASE 5 inline auto-repair)
@@ -64,9 +62,8 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
     console.log("\n⏸️  Skipping deployment.");
     console.log(`\nTo deploy later:`);
     console.log(`  cd ${cdkOutputDir}`);
-    console.log(`  npm install && npm run build`);
-    console.log(`  cdk deploy`);
-    console.log(`\nTo tear down after a deploy, from repo root: infra-decommission\n`);
+    console.log(`  terraform init && terraform apply`);
+    console.log(`\nTo tear down later: infra-decommission\n`);
     return true;
   }
 
@@ -102,7 +99,8 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
       result,
       finalState.metadata,
       attempt,
-      lastUserDecision
+      lastUserDecision,
+      cdkOutputDir
     );
 
     agent.ctx.mode = "repair";
@@ -160,11 +158,11 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
     console.log(`\nCDK Project: ${cdkOutputDir}`);
     console.log("\nTo manage your infrastructure:");
     console.log(`  cd ${cdkOutputDir}`);
-    console.log(`  cdk diff     # See changes`);
-    console.log(`  cdk deploy   # Deploy updates`);
-    console.log("\nTo remove everything from AWS later (from this repo root):");
+    console.log(`  terraform plan    # See changes`);
+    console.log(`  terraform apply   # Deploy updates`);
+    console.log("\nTo remove all resources:");
     console.log(`  infra-decommission`);
-    console.log(`  # same as: cd ${cdkOutputDir} && npx cdk destroy --all --force\n`);
+    console.log(`  # same as: cd ${cdkOutputDir} && terraform destroy\n`);
     return true;
   }
 
@@ -173,7 +171,7 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
   if (result.transcriptPath) console.log(`   Transcript:         ${result.transcriptPath}`);
   console.log(`\nYou can investigate and re-run manually:`);
   console.log(`  cd ${cdkOutputDir}`);
-  console.log(`  npm install && npm run build && cdk deploy\n`);
+  console.log(`  terraform init && terraform apply\n`);
   return false;
 }
 
@@ -235,17 +233,17 @@ async function reviewAndApply(patch, cdkOutputDir, agent, rl) {
   return { outcome: "applied" };
 }
 
-async function buildFailureContext(result, metadata, attempt, lastUserDecision) {
+async function buildFailureContext(result, metadata, attempt, lastUserDecision, tfDir) {
   const stackName = (metadata && metadata.stackName) || "Unknown";
   const combinedLog = `${result.stdout || ""}\n${result.stderr || ""}`;
   const logTail = tail(combinedLog, LOG_TAIL_BYTES) || "(empty)";
 
   let cfnEvents = "";
-  if (result.phase === "deploy") {
+  if (result.phase === "apply" && tfDir) {
     try {
-      cfnEvents = await getRecentStackFailureEvents(stackName, 30);
+      cfnEvents = await getRecentTFFailureEvents(tfDir, 50);
     } catch (e) {
-      cfnEvents = `(could not fetch CFN events: ${e.message})`;
+      cfnEvents = `(could not fetch Terraform logs: ${e.message})`;
     }
   }
 

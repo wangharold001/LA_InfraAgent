@@ -11,8 +11,8 @@ if (!_pack || !Object.keys(_pack.SERVICE_META || {}).length) {
   );
 }
 const SERVICE_META = _pack?.SERVICE_META || {};
-const CDK_META = _pack?.CDK_META || {};
-const NODE_CDK_DEFAULTS = _pack?.NODE_CDK_DEFAULTS || {};
+const TF_META = _pack?.TF_META || {};
+const NODE_TF_DEFAULTS = _pack?.NODE_TF_DEFAULTS || {};
 const EDGE_RELATIONSHIPS = _pack?.EDGE_RELATIONSHIPS || [];
 
 const NODE_MIN_W = 140;
@@ -114,12 +114,14 @@ function uid(prefix) {
   return prefix + "_" + Math.random().toString(36).slice(2, 8);
 }
 
-function toPascalCase(str) {
+function toSnakeCase(str) {
   return (str || "")
-    .replace(/[^a-zA-Z0-9 ]/g, " ")
-    .split(" ").filter(Boolean)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join("");
+    .replace(/[^a-zA-Z0-9 _]/g, " ")
+    .trim()
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map(w => w.toLowerCase())
+    .join("_");
 }
 
 const canvas = document.getElementById("canvas");
@@ -331,10 +333,10 @@ function renderInspector() {
 
     inspector.appendChild(field("ID",            n.id,                                          null, true));
     inspector.appendChild(field("Service",       SERVICE_META[n.type]?.label || n.type,         null, true));
-    inspector.appendChild(field("CDK Construct", n.cdkConstruct || "—",                         null, true));
-    inspector.appendChild(field("CDK Module",    n.cdkModule    || "—",                         null, true));
+    inspector.appendChild(field("Provider",      n.provider     || "aws",                        null, true));
+    inspector.appendChild(field("TF Resource",  n.tfResource   || "—",                          null, true));
     inspector.appendChild(field("Label",         n.label || "",    v => { n.label   = v; render(); }));
-    inspector.appendChild(field("CDK ID",        n.cdkId  || "",   v => { n.cdkId  = v; renderJson(); }));
+    inspector.appendChild(field("TF ID",          n.tfId   || "",   v => { n.tfId   = v; renderJson(); }));
     inspector.appendChild(textareaField("Notes", n.notes  || "",   v => { n.notes  = v; renderJson(); }, 2));
 
     // Props JSON
@@ -388,17 +390,17 @@ function renderInspector() {
     inspector.appendChild(relWrap);
 
     inspector.appendChild(field("Protocol", e.protocol || "", v => { e.protocol = v; renderJson(); }));
-    inspector.appendChild(field("CDK Method", e.cdkMethod || "", v => { e.cdkMethod = v; renderJson(); }, false, "e.g. table.grantReadWriteData(fn)"));
+    inspector.appendChild(field("TF Ref", e.tfRef || "", v => { e.tfRef = v; renderJson(); }, false, "e.g. aws_iam_role_policy.lambda_dynamo"));
 
     // IAM Actions textarea
     const actWrap = document.createElement("div"); actWrap.className = "field";
     const actLbl  = document.createElement("label"); actLbl.textContent = "IAM Actions (JSON array)";
     const actTa   = document.createElement("textarea");
     actTa.style.minHeight = "70px";
-    actTa.value = JSON.stringify(e.iamActions || [], null, 2);
+    actTa.value = JSON.stringify(e.permissions || [], null, 2);
     actTa.addEventListener("change", () => {
-      try   { e.iamActions = JSON.parse(actTa.value); renderJson(); }
-      catch (err) { alert("Invalid JSON: " + err.message); actTa.value = JSON.stringify(e.iamActions || [], null, 2); }
+      try   { e.permissions = JSON.parse(actTa.value); renderJson(); }
+      catch (err) { alert("Invalid JSON: " + err.message); actTa.value = JSON.stringify(e.permissions || [], null, 2); }
     });
     actWrap.appendChild(actLbl); actWrap.appendChild(actTa);
     inspector.appendChild(actWrap);
@@ -452,18 +454,18 @@ function renderJson() {
 }
 
 function addNode(type, x, y) {
-  const meta    = SERVICE_META[type] || { label: type };
-  const cdkMeta = CDK_META[type]    || { construct: null, module: null };
-  const label   = meta.label;
+  const meta   = SERVICE_META[type] || { label: type, provider: "aws" };
+  const tfMeta = TF_META[type] || { resource: null };
+  const label  = meta.label;
   const n = {
     id: uid("n"), type, label,
-    cdkConstruct: cdkMeta.construct,
-    cdkModule:    cdkMeta.module,
-    cdkId:        toPascalCase(label),
-    notes:        "",
+    provider:    meta.provider || "aws",
+    tfResource:  tfMeta.resource,
+    tfId:        toSnakeCase(label),
+    notes:       "",
     x: Math.round(x / 10) * 10,
     y: Math.round(y / 10) * 10,
-    props: { ...(NODE_CDK_DEFAULTS[type] || {}) }
+    props: { ...(NODE_TF_DEFAULTS[type] || {}) }
   };
   state.nodes.push(n);
   selection = { kind: "node", id: n.id };
@@ -507,7 +509,32 @@ function wirePalette() {
     });
 
     palette.addEventListener("click", (e) => {
-      const btn = e.target && e.target.closest ? e.target.closest(".palette-cat") : null;
+      // Cloud provider toggle
+      const cloudBtn = e.target?.closest?.(".palette-cloud-btn");
+      if (cloudBtn) {
+        const cloud = cloudBtn.dataset.cloud;
+        document.querySelectorAll(".palette-cloud-btn").forEach(b => b.classList.toggle("active", b === cloudBtn));
+
+        // Show/hide category tabs for this cloud
+        const cats = document.querySelectorAll(".palette-cat");
+        cats.forEach(b => { b.style.display = b.dataset.provider === cloud ? "" : "none"; });
+
+        // Activate the first visible category
+        const firstCat = [...cats].find(b => b.dataset.provider === cloud);
+        if (firstCat) {
+          cats.forEach(b => { b.classList.remove("active"); b.setAttribute("aria-selected", "false"); });
+          firstCat.classList.add("active");
+          firstCat.setAttribute("aria-selected", "true");
+          const group = firstCat.dataset.group;
+          document.querySelectorAll(".palette-group-panel").forEach(p => p.classList.toggle("active", p.dataset.group === group));
+        }
+
+        document.querySelector(".app")?.classList.add("palette-expanded");
+        return;
+      }
+
+      // Category tab click
+      const btn = e.target?.closest?.(".palette-cat");
       if (!btn) return;
       const group = btn.dataset.group;
       document.querySelectorAll(".palette-cat").forEach((b) => {
@@ -517,7 +544,6 @@ function wirePalette() {
       document.querySelectorAll(".palette-group-panel").forEach((p) => {
         p.classList.toggle("active", p.dataset.group === group);
       });
-      // When selecting a category, expand the palette so services are visible.
       document.querySelector(".app")?.classList.add("palette-expanded");
     });
   }
@@ -1380,6 +1406,7 @@ chatApiKey.addEventListener("change", () => {
 
 // Conversation history sent to the API (excludes system-note bubbles)
 let chatHistory = [];
+let cachedRepoContext = null;
 
 // Keep focus behavior when switching to chat via right pane tabs.
 document.querySelectorAll(".right-tab").forEach((b) => {
@@ -1389,7 +1416,8 @@ document.querySelectorAll(".right-tab").forEach((b) => {
 
 document.getElementById("btnClearChat").addEventListener("click", () => {
   chatHistory = [];
-  chatMessages.innerHTML = '<div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>';
+  cachedRepoContext = null;
+  chatMessages.innerHTML = '<div class="chat-msg system-note">Ask me anything about your AWS architecture. Your current diagram is always included. Enable "Include codebase" to also share your local repo files.</div>';
 });
 
 // Auto-resize textarea
@@ -1420,48 +1448,48 @@ function appendMsg(role, text) {
 const CLAUDE_TOOLS = [
   {
     name: "add_node",
-    description: "Add an AWS service node. Populate cdkId, props, and notes fully — the props object must contain ALL fields listed in the CDK defaults for that service type so a downstream CDK agent needs zero guesswork.",
+    description: "Add a cloud service node (AWS, Azure, or GCP). Populate tfId, props, and notes fully so the downstream Terraform generator needs zero guesswork.",
     input_schema: {
       type: "object",
       properties: {
         type:  { type: "string", description: "One of: " + Object.keys(SERVICE_META).sort().join(", ") },
         label: { type: "string", description: "Human-readable display name, e.g. 'User Auth Function'" },
-        cdkId: { type: "string", description: "PascalCase CDK construct ID, e.g. 'UserAuthFunction'. Must be unique in the stack." },
+        tfId:  { type: "string", description: "snake_case Terraform resource local name, e.g. 'user_auth_function'. Must be unique per resource type." },
         props: {
           type: "object",
-          description: "Complete CDK deployment props. Always include ALL fields for the service type — use recommended defaults for anything not specified by the user. Key fields by type: lambda→{runtime,handler,code,memorySize,timeout,environment,tracing,removalPolicy}; dynamodb→{partitionKey,sortKey,billingMode,stream,pointInTimeRecovery,encryption,gsi,removalPolicy}; s3→{versioned,blockPublicAccess,encryption,removalPolicy,autoDeleteObjects}; sqs→{fifo,visibilityTimeout,messageRetentionPeriod,dlqRef,maxReceiveCount,encryption,removalPolicy}; rds→{engine,engineVersion,instanceClass,instanceSize,databaseName,multiAz,storageEncrypted,deletionProtection,vpcRef,removalPolicy}."
+          description: "Complete Terraform props. Include ALL relevant attributes — use provider-recommended defaults for anything not specified. AWS lambda→{runtime,handler,filename,memory_size,timeout,environment_variables,tracing_mode}; dynamodb→{hash_key,billing_mode,point_in_time_recovery,server_side_encryption}; Azure az_functions→{os_type,runtime_name,runtime_version,sku_name}; GCP gcp_cloud_run→{location,image,cpu,memory,max_instance_count}."
         },
-        notes: { type: "string", description: "One or two sentences describing this resource's role in the architecture and any non-obvious configuration decisions." },
+        notes: { type: "string", description: "1-2 sentences describing this resource's role and any non-obvious decisions." },
         x:     { type: "number", description: "Canvas x position (auto-placed if omitted)" },
         y:     { type: "number", description: "Canvas y position (auto-placed if omitted)" }
       },
-      required: ["type", "label", "cdkId"]
+      required: ["type", "label", "tfId"]
     }
   },
   {
     name: "add_edge",
-    description: "Connect two nodes. Always specify relationship, iamActions, cdkMethod, and protocol so a CDK agent can generate correct IAM grants and integrations without guessing.",
+    description: "Connect two nodes. Always specify relationship, permissions, tfRef, and protocol so the Terraform generator can emit correct IAM/RBAC and resource references.",
     input_schema: {
       type: "object",
       properties: {
         from_id:      { type: "string", description: "Source node id" },
         to_id:        { type: "string", description: "Destination node id" },
-        label:        { type: "string", description: "Short display label shown on the diagram arrow, e.g. 'reads/writes'" },
+        label:        { type: "string", description: "Short display label on the arrow, e.g. 'reads/writes'" },
         relationship: {
           type: "string",
-          enum: ["iam-grant","event-source-mapping","subscription","api-integration","origin","trigger","invoke","stream-consumer","read","write","read-write"],
-          description: "The AWS relationship type this arrow represents."
+          enum: ["iam-grant","role-assignment","iam-binding","event-source-mapping","subscription","api-integration","origin","trigger","invoke","stream-consumer","read","write","read-write","peering"],
+          description: "The relationship type this edge represents."
         },
-        iamActions: {
+        permissions: {
           type: "array", items: { type: "string" },
-          description: "Explicit IAM action strings needed for this connection, e.g. ['dynamodb:GetItem','dynamodb:PutItem','dynamodb:Query']. Empty array for non-IAM relationships."
+          description: "Permission strings: AWS IAM actions (e.g. 'dynamodb:GetItem'), Azure RBAC roles (e.g. 'Storage Blob Data Contributor'), GCP roles (e.g. 'roles/storage.objectViewer'). Empty array for non-permission relationships."
         },
-        cdkMethod: {
+        tfRef: {
           type: "string",
-          description: "The exact CDK L2 method call that wires this relationship, e.g. 'table.grantReadWriteData(fn)', 'fn.addEventSource(new SqsEventSource(queue,{batchSize:10}))', 'topic.addSubscription(new SqsSubscription(queue))'."
+          description: "Terraform resource reference that wires this connection, e.g. 'aws_iam_role_policy.lambda_dynamo' or 'azurerm_role_assignment.func_cosmos'."
         },
-        protocol: { type: "string", description: "Communication mechanism, e.g. 'AWS SDK v3', 'HTTPS', 'EventBridge rule', 'SQS trigger'." },
-        notes:    { type: "string", description: "Any non-obvious wiring details, ordering constraints, or permission boundaries relevant for CDK generation." }
+        protocol: { type: "string", description: "Communication mechanism, e.g. 'HTTPS', 'gRPC', 'AMQP', 'Pub/Sub push', 'AWS SDK v3'." },
+        notes:    { type: "string", description: "Any non-obvious wiring details or cross-cloud connectivity constraints." }
       },
       required: ["from_id", "to_id", "relationship"]
     }
@@ -1521,18 +1549,17 @@ function executeTool(name, input) {
       const pos     = (input.x != null && input.y != null) ? input : autoPlace();
       const type    = input.type in SERVICE_META ? input.type : "external";
       const meta    = SERVICE_META[type] || { label: type };
-      const cdkMeta = CDK_META[type]    || { construct: null, module: null };
+      const tfMeta  = TF_META[type] || { resource: null };
       const label   = input.label || meta.label;
       const n = {
         id: uid("n"), type, label,
-        cdkConstruct: cdkMeta.construct,
-        cdkModule:    cdkMeta.module,
-        cdkId:        input.cdkId || toPascalCase(label),
-        notes:        input.notes || "",
+        provider:    meta.provider || "aws",
+        tfResource:  tfMeta.resource,
+        tfId:        input.tfId || toSnakeCase(label),
+        notes:       input.notes || "",
         x: Math.round(pos.x / 10) * 10,
         y: Math.round(pos.y / 10) * 10,
-        // merge defaults → agent-supplied props (agent values win)
-        props: { ...(NODE_CDK_DEFAULTS[type] || {}), ...(input.props || {}) }
+        props: { ...(NODE_TF_DEFAULTS[type] || {}), ...(input.props || {}) }
       };
       state.nodes.push(n);
       render();
@@ -1548,8 +1575,8 @@ function executeTool(name, input) {
         id: uid("e"), from: src.id, to: dst.id,
         label:        input.label        || "",
         relationship: input.relationship || "invoke",
-        iamActions:   input.iamActions   || [],
-        cdkMethod:    input.cdkMethod    || "",
+        permissions:  input.permissions  || [],
+        tfRef:        input.tfRef        || "",
         protocol:     input.protocol     || "",
         notes:        input.notes        || ""
       };
@@ -1696,6 +1723,19 @@ function slimContent(content) {
 }
 
 async function runAgentLoop(apiKey) {
+  // Fetch repo context on first use if the toggle is checked
+  if (document.getElementById("chatIncludeRepo").checked && cachedRepoContext === null && __SERVER_PORT__) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${__SERVER_PORT__}/context`);
+      if (r.ok) {
+        const data = await r.json();
+        cachedRepoContext = data.context || "";
+      }
+    } catch {
+      cachedRepoContext = "";
+    }
+  }
+
   // Build system prompt once per user turn, not on every tool-use round-trip.
   const systemPrompt = buildSystemPrompt();
 
@@ -1765,7 +1805,7 @@ const MODE_PROMPTS = {
 };
 
 function buildSystemPrompt() {
-  const includeDiagram = document.getElementById("chatIncludeDiagram").checked;
+  const includeRepo = document.getElementById("chatIncludeRepo").checked;
   const mode = document.getElementById("chatMode").value;
   let prompt = `You are an expert AWS solutions architect embedded in a diagram editor. Your output is consumed by a downstream CDK code-generation agent — every node and edge must be filled in completely so that agent needs zero guesswork.`;
 
@@ -1774,7 +1814,7 @@ function buildSystemPrompt() {
   prompt += `
 
 NODES — always call add_node with:
-• cdkId: PascalCase unique ID (e.g. "UserAuthFunction", "OrdersTable")
+• tfId: snake_case unique Terraform resource local name (e.g. "user_auth_function", "orders_table")
 • props: full CDK props object — include ALL fields for the service type, not just the ones the user mentioned. Fill unspecified fields with AWS recommended defaults. Key rules:
   - lambda: set runtime (NODEJS_20_X/PYTHON_3_12/etc), handler, code path, memorySize, timeout, environment map, tracing "Active", removalPolicy
   - dynamodb: set partitionKey {name,type}, sortKey if needed, billingMode, stream, pointInTimeRecovery true, encryption, removalPolicy "RETAIN" for prod / "DESTROY" for dev
@@ -1786,8 +1826,8 @@ NODES — always call add_node with:
 
 EDGES — always call add_edge with:
 • relationship: one of [iam-grant, event-source-mapping, subscription, api-integration, origin, trigger, invoke, stream-consumer, read, write, read-write]
-• iamActions: explicit IAM action strings (e.g. ["dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query"]). Use [] only for non-IAM relationships.
-• cdkMethod: the exact CDK L2 call (e.g. "table.grantReadWriteData(fn)", "fn.addEventSource(new SqsEventSource(queue,{batchSize:10}))", "topic.addSubscription(new SqsSubscription(queue))")
+• permissions: permission strings — AWS IAM actions (e.g. "dynamodb:GetItem"), Azure RBAC roles (e.g. "Storage Blob Data Contributor"), GCP roles (e.g. "roles/storage.objectViewer"). Use [] for non-permission relationships.
+• tfRef: the Terraform resource reference that wires these two resources, e.g. "aws_iam_role_policy.lambda_dynamo" or "azurerm_role_assignment.func_cosmos"
 • protocol: how they communicate (AWS SDK v3 / HTTPS / EventBridge rule / SQS trigger / etc.)
 • notes: any wiring constraints or ordering dependencies
 
@@ -1798,17 +1838,22 @@ Valid node types: ${Object.keys(SERVICE_META).sort().join(", ")}.
 For unfamiliar services, call aws_kb_retrieve with the CDK module name (same catalog as AWS MCP / AWS documentation knowledge base) before wiring props and edges.
 To remove a specific node or edge use remove_object(id). Only use clear_diagram to wipe everything.`;
 
-  if (includeDiagram) {
-    if (state.nodes.length > 0) {
-      const snap = {
-        name: state.metadata?.name,
-        nodes: state.nodes.map(n => ({ id: n.id, type: n.type, label: n.label })),
-        edges: state.edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label }))
-      };
-      prompt += `\n\nCurrent diagram:\n${JSON.stringify(snap, null, 2)}`;
-    } else {
-      prompt += `\n\nThe diagram is currently empty.`;
-    }
+  // Always include the current diagram
+  if (state.nodes.length > 0) {
+    const snap = {
+      name: state.metadata?.name,
+      nodes: state.nodes.map(n => ({ id: n.id, type: n.type, label: n.label })),
+      edges: state.edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label }))
+    };
+    prompt += `\n\nCurrent diagram:\n${JSON.stringify(snap, null, 2)}`;
+  } else {
+    prompt += `\n\nThe diagram is currently empty.`;
   }
+
+  // Include repo files if the toggle is on and we have the context cached
+  if (includeRepo && cachedRepoContext) {
+    prompt += `\n\nRepository files:\n${cachedRepoContext}`;
+  }
+
   return prompt;
 }
