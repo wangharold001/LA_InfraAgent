@@ -18,7 +18,8 @@ import { classifyPatch } from "./cdk-tools.js";
 const MAX_REPAIR_ATTEMPTS = 3;
 const LOG_TAIL_BYTES = 4000;
 
-export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
+export async function runIaCPipeline(finalState, cdkOutputDir, apiKey, options = {}) {
+  const { repoRoot = null } = options;
   // ---------------------------------------------------------------------------
   // PHASE 2: Review & Approval
   // ---------------------------------------------------------------------------
@@ -165,6 +166,65 @@ export async function runIaCPipeline(finalState, cdkOutputDir, apiKey) {
     console.log("\nTo remove everything from AWS later (from this repo root):");
     console.log(`  infra-decommission`);
     console.log(`  # same as: cd ${cdkOutputDir} && npx cdk destroy --all --force\n`);
+
+    // -------------------------------------------------------------------------
+    // PHASE 5: Post-Deployment Codebase Integration (Optional)
+    // -------------------------------------------------------------------------
+    if (repoRoot) {
+      const readline = await import("readline/promises");
+      const rl = readline.default.createInterface({ input: process.stdin, output: process.stdout });
+      const wantIntegration = await rl.question(
+        "\n🔗 Would you like me to integrate this deployed infrastructure into your codebase?\n" +
+        "   (I'll add AWS SDK calls with the actual deployed resource ARNs/names)\n" +
+        "   [yes/no] (default: no): "
+      );
+      rl.close();
+
+      if (/^y(es)?$/i.test(wantIntegration.trim())) {
+        console.log("\n📍 PHASE 5: Post-Deployment Codebase Integration\n");
+
+        try {
+          // Get stack outputs from deployment
+          const { getCDKStackOutputs, mapOutputsToEnvVars } = await import("./env-setter.js");
+          const {
+            analyzeAndPlanIntegrationWithOutputs,
+            applyAndReviewIntegration
+          } = await import("./codebase-integrator.js");
+
+          const stackName = finalState.metadata?.stackName || "InfrastructureStack";
+
+          // Get actual deployed resource info
+          const stackOutputs = getCDKStackOutputs(cdkOutputDir, stackName);
+          const envVars = mapOutputsToEnvVars(stackOutputs, finalState);
+
+          if (Object.keys(envVars).length === 0) {
+            console.log("\n⚠️  No stack outputs found. Skipping integration.\n");
+          } else {
+            // Analyze codebase and create integration plan with ACTUAL deployed resources
+            const integrationPlan = await analyzeAndPlanIntegrationWithOutputs({
+              repoPath: repoRoot,
+              architecture: finalState,
+              deployedResources: envVars,
+              stackOutputs,
+              apiKey
+            });
+
+            // Apply changes and let user review via git diff
+            const integrated = await applyAndReviewIntegration(repoRoot, integrationPlan);
+
+            if (integrated) {
+              // Also set environment variables on platforms (Railway, Vercel, .env)
+              const { setEnvironmentVariables } = await import("./env-setter.js");
+              await setEnvironmentVariables(cdkOutputDir, stackName, finalState, repoRoot);
+            }
+          }
+        } catch (error) {
+          console.error("\n❌ Codebase integration failed:", error.message);
+          console.error("   You can integrate manually using the stack outputs.\n");
+        }
+      }
+    }
+
     return true;
   }
 

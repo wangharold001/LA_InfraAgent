@@ -99,7 +99,7 @@ export const NODE_CDK_DEFAULTS = {
     reservedConcurrentExecutions: null,
     layers: [],
     vpcRef: null,
-    removalPolicy: "DESTROY",
+    logRemovalPolicy: "DESTROY",
   },
   ec2: {
     instanceType: "T3_MICRO",

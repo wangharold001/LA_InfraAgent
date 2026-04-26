@@ -29,6 +29,11 @@ CRITICAL RULES FOR JSON FILES:
 - JSON does not support comments; no // or /* */; no trailing commas
 - Use **write_file** with valid JSON only for those paths
 
+AVOID THESE ERRORS:
+- lib/cramify-stack-stack.ts(136,9): error TS2561: Object literal may only specify known properties, but 'removalPolicy' does not exist in type 'FunctionProps'. Did you mean to write 'logRemovalPolicy'?
+lib/cramify-stack-stack.ts(205,7): error TS2353: Object literal may only specify known properties, and 'retain' does not exist in type 'RestApiProps'.
+- USE LOG POLICY TO AVOID THIS
+
 CRITICAL RULES FOR RESOURCE NAMING:
 - **ADD UNIQUE SUFFIXES** to physical resource names to avoid "already exists" errors
 - Use \`\${Stack.of(this).stackName}\` in names where appropriate (SNS, SQS, S3, Lambda, etc.)

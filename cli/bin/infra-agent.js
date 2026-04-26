@@ -91,4 +91,6 @@ if (fs.existsSync(stateJsonPath)) {
   console.log("ℹ️  No saved state file found — using original generated diagram.");
 }
 
-await runIaCPipeline(finalState, cdkOutputDir, apiKey);
+await runIaCPipeline(finalState, cdkOutputDir, apiKey, {
+  repoRoot
+});
