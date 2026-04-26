@@ -118,7 +118,7 @@ Click any node or edge to edit its properties: label, service-specific config (r
 
 ### Chat
 
-Talk to Claude about your architecture. With "Include current diagram" checked, Claude can see your full diagram and give specific, contextual advice. Select a generation mode to bias its recommendations.
+Talk to Claude about your architecture. Toggle "Include codebase" to give Claude context from your local repository — your existing source files, config, and structure — so recommendations fit what you've already built. Select a generation mode to bias Claude's suggestions.
 
 ### Billing
 
