@@ -632,6 +632,188 @@ new elasticache.CfnReplicationGroup(this, 'Redis', {
   transitEncryptionEnabled: true,
 });
 `,
+    kinesis: `
+AWS CDK Kinesis Stream (aws-cdk-lib/aws-kinesis):
+
+import * as kinesis from 'aws-cdk-lib/aws-kinesis';
+
+new kinesis.Stream(this, 'Stream', {
+  shardCount: 1,
+  retentionPeriod: Duration.hours(24),
+  streamMode: kinesis.StreamMode.PROVISIONED,
+});
+
+stream.grantReadWrite(lambdaFunction);
+`,
+    eventbridge: `
+AWS CDK EventBridge (aws-cdk-lib/aws-events):
+
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+
+const bus = new events.EventBus(this, 'Bus', { eventBusName: 'app-events' });
+
+new events.Rule(this, 'Rule', {
+  eventBus: bus,
+  eventPattern: { source: ['app.orders'] },
+  targets: [new targets.LambdaFunction(lambdaFunction)],
+});
+`,
+    stepfunctions: `
+AWS CDK Step Functions (aws-cdk-lib/aws-stepfunctions):
+
+import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
+
+const chain = new sfn.Pass(this, 'Start');
+new sfn.StateMachine(this, 'Machine', {
+  definitionBody: sfn.DefinitionBody.fromChainable(chain),
+  timeout: Duration.minutes(5),
+});
+
+For Lambda / Choice / Map steps use aws-cdk-lib/aws-stepfunctions-tasks (LambdaInvoke, etc.).
+`,
+    cognito: `
+AWS CDK Cognito UserPool (aws-cdk-lib/aws-cognito):
+
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+
+new cognito.UserPool(this, 'Pool', {
+  selfSignUpEnabled: true,
+  signInAliases: { email: true },
+});
+`,
+    kms: `
+AWS CDK KMS Key (aws-cdk-lib/aws-kms):
+
+import * as kms from 'aws-cdk-lib/aws-kms';
+
+const key = new kms.Key(this, 'Key', { enableKeyRotation: true });
+key.grantEncryptDecrypt(lambdaFunction);
+`,
+    secretsmanager: `
+AWS CDK Secrets Manager (aws-cdk-lib/aws-secretsmanager):
+
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+
+const secret = new secretsmanager.Secret(this, 'Secret', { generateSecretString: {} });
+secret.grantRead(lambdaFunction);
+`,
+    route53: `
+AWS CDK Route 53 HostedZone (aws-cdk-lib/aws-route53):
+
+import * as route53 from 'aws-cdk-lib/aws-route53';
+
+new route53.HostedZone(this, 'Zone', { zoneName: 'example.com' });
+`,
+    nlb: `
+AWS CDK Network Load Balancer (aws-cdk-lib/aws-elasticloadbalancingv2):
+
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+
+new elbv2.NetworkLoadBalancer(this, 'NLB', {
+  vpc,
+  internetFacing: true,
+});
+`,
+    efs: `
+AWS CDK EFS (aws-cdk-lib/aws-efs):
+
+import * as efs from 'aws-cdk-lib/aws-efs';
+
+new efs.FileSystem(this, 'Fs', { vpc, encrypted: true });
+`,
+    opensearch: `
+AWS CDK OpenSearch Domain (aws-cdk-lib/aws-opensearchservice):
+
+import * as opensearch from 'aws-cdk-lib/aws-opensearchservice';
+
+new opensearch.Domain(this, 'Domain', {
+  version: opensearch.EngineVersion.OPENSEARCH_2_11,
+  capacity: { dataNodes: 1, dataNodeInstanceType: 't3.small.search' },
+});
+`,
+    documentdb: `
+AWS CDK DocumentDB (aws-cdk-lib/aws-docdb):
+
+import * as docdb from 'aws-cdk-lib/aws-docdb';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+
+new docdb.DatabaseCluster(this, 'Cluster', {
+  masterUser: { username: 'master' },
+  instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM),
+  vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+  vpc,
+});
+`,
+    redshift: `
+AWS CDK Redshift (aws-cdk-lib/aws-redshift):
+
+import * as redshift from 'aws-cdk-lib/aws-redshift';
+
+new redshift.Cluster(this, 'Warehouse', {
+  masterUser: { masterUsername: 'admin' },
+  vpc,
+  nodeType: redshift.NodeType.DC2_LARGE,
+  numberOfNodes: 1,
+});
+`,
+    appsync: `
+AWS CDK AppSync GraphqlApi (aws-cdk-lib/aws-appsync):
+
+import * as appsync from 'aws-cdk-lib/aws-appsync';
+
+new appsync.GraphqlApi(this, 'Api', {
+  name: 'api',
+  schema: appsync.SchemaFile.fromAsset('schema.graphql'),
+  authorizationConfig: { defaultAuthorization: { authorizationType: appsync.AuthorizationType.API_KEY } },
+});
+`,
+    waf: `
+AWS CDK WAFv2 (aws-cdk-lib/aws-wafv2):
+
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
+
+new wafv2.CfnWebACL(this, 'WebAcl', {
+  defaultAction: { allow: {} },
+  scope: 'REGIONAL',
+  visibilityConfig: { cloudWatchMetricsEnabled: true, metricName: 'acl', sampledRequestsEnabled: true },
+});
+`,
+    acm: `
+AWS CDK ACM Certificate (aws-cdk-lib/aws-certificatemanager):
+
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+
+new acm.Certificate(this, 'Cert', { domainName: 'example.com', validation: acm.CertificateValidation.fromDns() });
+`,
+    athena: `
+AWS CDK Athena WorkGroup (aws-cdk-lib/aws-athena):
+
+import * as athena from 'aws-cdk-lib/aws-athena';
+
+new athena.CfnWorkGroup(this, 'WG', {
+  name: 'primary',
+  workGroupConfiguration: { enforceWorkGroupConfiguration: true },
+});
+`,
+    glue: `
+AWS CDK Glue Database (aws-cdk-lib/aws-glue):
+
+import * as glue from 'aws-cdk-lib/aws-glue';
+
+new glue.Database(this, 'Db', { databaseName: 'analytics' });
+`,
+    scheduler: `
+AWS CDK EventBridge Scheduler (aws-cdk-lib/aws-scheduler, aws-cdk-lib/aws-scheduler-targets):
+
+import * as scheduler from 'aws-cdk-lib/aws-scheduler';
+import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
+
+new scheduler.Schedule(this, 'Sched', {
+  schedule: scheduler.ScheduleExpression.rate(Duration.hours(1)),
+  target: new LambdaInvoke(fn, { /* input, retryPolicy */ }),
+});
+`,
   };
 
   const q = (query || "").toLowerCase();
@@ -647,8 +829,29 @@ new elasticache.CfnReplicationGroup(this, 'Redis', {
   if (q.includes("ec2") || q.includes("instance") || q.includes("ami") || q.includes("machineimage"))
     return docs.ec2;
   if (q.includes("fargate") || q.includes("ecs")) return docs.fargate;
-  if (q.includes("alb") || q.includes("load balancer")) return docs.alb;
+  if (q.includes("alb") || (q.includes("load balancer") && !q.includes("network"))) return docs.alb;
   if (q.includes("elasticache") || q.includes("redis")) return docs.elasticache;
+  if (q.includes("kinesis")) return docs.kinesis;
+  if (q.includes("eventbridge") || q.includes("event bus") || q.includes("event-bus")) return docs.eventbridge;
+  if (q.includes("step function") || q.includes("stepfunctions") || q.includes("sfn")) return docs.stepfunctions;
+  if (q.includes("cognito")) return docs.cognito;
+  if (q.includes("kms")) return docs.kms;
+  if (q.includes("secret") && q.includes("manager")) return docs.secretsmanager;
+  if (q.includes("secretsmanager")) return docs.secretsmanager;
+  if (q.includes("route53") || q.includes("hosted zone")) return docs.route53;
+  if (q.includes(" nlb") || q === "nlb" || q.includes("network load")) return docs.nlb;
+  if (q.includes("efs") || q.includes("elastic file")) return docs.efs;
+  if (q.includes("opensearch") || q.includes("elasticsearch")) return docs.opensearch;
+  if (q.includes("documentdb") || q.includes("docdb")) return docs.documentdb;
+  if (q.includes("redshift")) return docs.redshift;
+  if (q.includes("appsync")) return docs.appsync;
+  if (q.includes(" waf") || q.includes("web acl")) return docs.waf;
+  if (q.includes("acm") || q.includes("certificate manager")) return docs.acm;
+  if (q.includes("athena")) return docs.athena;
+  if (q.includes("glue")) return docs.glue;
+  if (q.includes("aws-scheduler") || q.includes("eventbridge scheduler") || q.includes("scheduler target"))
+    return docs.scheduler;
+  if (q.includes("scheduler")) return docs.scheduler;
 
   return `
 AWS CDK TypeScript General Best Practices:

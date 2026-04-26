@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createDiagram, TOOLS } from "./diagram.js";
+import { VALID_NODE_TYPES_PROMPT } from "./diagram-services.js";
 
 export const MODE_PROMPTS = {
   minimal:    "COST MODE — Minimal: prioritize zero fixed costs. Use serverless-first (Lambda, DynamoDB, S3, API Gateway). Avoid VPCs, NAT gateways, and any always-on compute unless the use case strictly requires it. Set removalPolicy DESTROY on everything.",
@@ -38,7 +39,9 @@ EDGES — always call add_edge with:
 - protocol: how they communicate (AWS SDK v3 / HTTPS / SQS trigger / etc.)
 
 LAYOUT — left-to-right data flow (x ≥ 320px between same-row nodes), top-to-bottom tiers (y ~160px apart).
-Valid node types: lambda, ec2, fargate, rds, dynamodb, s3, elasticache, sqs, sns, apigateway, alb, vpc, cloudfront, external, user. Use "external" for anything else.`;
+Valid node types: ${VALID_NODE_TYPES_PROMPT}. Use "external" for anything not in that list (still fill props and notes so the CDK agent can map it).
+
+For props and integrations you are unsure about, the downstream CDK agent uses **aws_kb_retrieve** against the same AWS documentation catalog as **AWS MCP** (Model Context Protocol) when live MCP is enabled — mirror that rigor: prefer official CDK L2 modules, correct prop names, and explicit edge.cdkMethod / iamActions.`;
 
   if (repoContext) prompt += `\n\nRepository files:\n${repoContext}`;
   return prompt;
