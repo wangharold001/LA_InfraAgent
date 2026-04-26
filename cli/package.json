@@ -1,6 +1,6 @@
 {
   "name": "infragen",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI-powered AWS infrastructure agent: from prompt to deployed CDK code",
   "type": "module",
   "bin": {
