@@ -38,6 +38,15 @@ function measureEdgeLabelWidth(text) {
   return _textMeasureCtx.measureText(text).width;
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 // __STATE_JSON_PATH__ and __SERVER_PORT__ are injected by the CLI via the
 // inline <script id="cli-config"> block in the HTML shell.
 let state = __DIAGRAM_STATE__ || freshState();
@@ -183,6 +192,8 @@ function render() {
   viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
   renderInspector();
   renderJson();
+  updateCostDisplay();
+  if (activeRightPanel === "billing") renderBillingPanel();
 }
 
 function renderNode(n) {
@@ -482,12 +493,426 @@ function deleteEdge(id) {
 
 let drag = null;
 
-document.querySelectorAll(".palette-item").forEach(item => {
-  item.addEventListener("dragstart", e => {
-    e.dataTransfer.setData("text/aws-type", item.dataset.type);
-    e.dataTransfer.setData("text/plain", item.dataset.type);
-    e.dataTransfer.effectAllowed = "copy";
+function wirePalette() {
+  // Service drag chips (delegated so injected palette updates still work)
+  const palette = document.querySelector(".palette");
+  if (palette && !palette.dataset.wired) {
+    palette.dataset.wired = "true";
+    palette.addEventListener("dragstart", (e) => {
+      const item = e.target && e.target.closest ? e.target.closest(".palette-item") : null;
+      if (!item) return;
+      e.dataTransfer.setData("text/aws-type", item.dataset.type);
+      e.dataTransfer.setData("text/plain", item.dataset.type);
+      e.dataTransfer.effectAllowed = "copy";
+    });
+
+    palette.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest(".palette-cat") : null;
+      if (!btn) return;
+      const group = btn.dataset.group;
+      document.querySelectorAll(".palette-cat").forEach((b) => {
+        b.classList.toggle("active", b === btn);
+        b.setAttribute("aria-selected", b === btn ? "true" : "false");
+      });
+      document.querySelectorAll(".palette-group-panel").forEach((p) => {
+        p.classList.toggle("active", p.dataset.group === group);
+      });
+      // When selecting a category, expand the palette so services are visible.
+      document.querySelector(".app")?.classList.add("palette-expanded");
+    });
+  }
+}
+
+wirePalette();
+// Start with palette expanded so the default "Compute" services render clearly.
+document.querySelector(".app")?.classList.add("palette-expanded");
+
+// ── Trash drop (drag node to delete) ───────────────────────────────────────
+
+const trashDrop = document.getElementById("trashDrop");
+const ctxMenu = document.getElementById("ctxMenu");
+const ctxDelete = document.getElementById("ctxDelete");
+let _ctxTarget = null; // { kind: "node"|"edge", id: string }
+
+function isPointInEl(clientX, clientY, el) {
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+}
+
+function setTrashVisible(on) {
+  if (!trashDrop) return;
+  trashDrop.classList.toggle("visible", !!on);
+  if (!on) trashDrop.classList.remove("hot");
+}
+
+function setTrashHot(on) {
+  if (!trashDrop) return;
+  trashDrop.classList.toggle("hot", !!on);
+}
+
+function hideCtxMenu() {
+  if (!ctxMenu) return;
+  ctxMenu.style.display = "none";
+  _ctxTarget = null;
+}
+
+function showCtxMenu(clientX, clientY, target) {
+  if (!ctxMenu) return;
+  _ctxTarget = target;
+  const pad = 8;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  ctxMenu.style.display = "";
+  // Position after display so we can clamp with actual size.
+  const r = ctxMenu.getBoundingClientRect();
+  const left = Math.min(vw - r.width - pad, Math.max(pad, clientX));
+  const top = Math.min(vh - r.height - pad, Math.max(pad, clientY));
+  ctxMenu.style.left = left + "px";
+  ctxMenu.style.top = top + "px";
+}
+
+// ── Right pane switching ─────────────────────────────────────────────────────
+
+let activeRightPanel = "inspector";
+
+const billingBody = document.getElementById("billingBody");
+const chatCostEl = document.getElementById("chatCost");
+const topSearch = document.getElementById("topSearch");
+const topSearchSuggest = document.getElementById("topSearchSuggest");
+const rightPaneMeta = document.getElementById("rightPaneMeta");
+
+function setRightPane(panel) {
+  activeRightPanel = panel;
+  document.querySelectorAll(".right-tab").forEach((b) => {
+    b.classList.toggle("active", b.dataset.panel === panel);
   });
+  document.querySelectorAll(".right-panel").forEach((p) => {
+    p.classList.toggle("active", p.dataset.panel === panel);
+  });
+  if (panel === "billing") renderBillingPanel();
+  // Inspector renders continuously with selection; chat is its own UI.
+}
+
+document.querySelectorAll(".right-tab").forEach((b) => {
+  b.addEventListener("click", () => setRightPane(b.dataset.panel));
+});
+
+// Topbar buttons removed; right-pane tabs handle switching.
+
+// AWS public pricing (us-east-1-ish on-demand) — rough baseline
+const AWS_PRICING = {
+  lambda: (p) => {
+    const invocations = 1_000_000;
+    const memGB = (p.memorySize || 512) / 1024;
+    const durSec = Math.min(p.timeout || 3, 900);
+    const gbSec = invocations * memGB * durSec;
+    const reqCost = Math.max(0, invocations - 1_000_000) * 0.2 / 1_000_000;
+    const compCost = Math.max(0, gbSec - 400_000) * 0.0000166667;
+    return reqCost + compCost;
+  },
+  ec2: (p) => {
+    const RATES = {
+      T3_NANO: 0.0052, T3_MICRO: 0.0104, T3_SMALL: 0.0208, T3_MEDIUM: 0.0416,
+      T3_LARGE: 0.0832, T3_XLARGE: 0.1664, T3_2XLARGE: 0.3328,
+      M5_LARGE: 0.0960, M5_XLARGE: 0.1920, M5_2XLARGE: 0.3840,
+      C5_LARGE: 0.0850, C5_XLARGE: 0.1700, C5_2XLARGE: 0.3400,
+    };
+    const key = (p.instanceType || "T3_MICRO").toUpperCase().replace(/[.\-]/g, "_");
+    return (RATES[key] || RATES.T3_MICRO) * 730;
+  },
+  fargate: (p) => {
+    const vcpu = (p.cpu || 256) / 1024;
+    const mem = (p.memoryLimitMiB || 512) / 1024;
+    return (vcpu * 0.04048 + mem * 0.004445) * 730 * (p.desiredCount || 1);
+  },
+  rds: (p) => {
+    const RATES = {
+      T3_MICRO: 0.018, T3_SMALL: 0.034, T3_MEDIUM: 0.068, T3_LARGE: 0.136,
+      T4G_MICRO: 0.016, T4G_SMALL: 0.032, T4G_MEDIUM: 0.064,
+      M5_LARGE: 0.240, M5_XLARGE: 0.480, R5_LARGE: 0.240, R5_XLARGE: 0.480,
+    };
+    const key = `${p.instanceClass || "T3"}_${p.instanceSize || "MICRO"}`.toUpperCase();
+    const hrRate = RATES[key] || RATES.T3_MICRO;
+    return hrRate * 730 * (p.multiAz ? 2 : 1) + (p.allocatedStorage || 20) * 0.115;
+  },
+  dynamodb: () => 1_000_000 * 0.25 / 1_000_000 + 500_000 * 1.25 / 1_000_000 + 1 * 0.25,
+  s3: () => 10 * 0.023 + 100 * 0.005 + 1000 * 0.0004,
+  elasticache: (p) => {
+    const RATES = {
+      "CACHE.T3.MICRO": 0.017, "CACHE.T3.SMALL": 0.034, "CACHE.T3.MEDIUM": 0.068,
+      "CACHE.M6G.LARGE": 0.154, "CACHE.R6G.LARGE": 0.218,
+      "CACHE.T4G.MICRO": 0.016, "CACHE.T4G.SMALL": 0.032,
+    };
+    const key = (p.cacheNodeType || "cache.t3.micro").toUpperCase();
+    return (RATES[key] || RATES["CACHE.T3.MICRO"]) * 730 * (p.numCacheNodes || 1);
+  },
+  sqs: (p) => (Math.max(0, 2_000_000 - 1_000_000) / 1_000_000) * (p.fifo ? 0.50 : 0.40),
+  sns: () => 1_000_000 * 0.50 / 1_000_000,
+  apigateway: (p) => {
+    const RATES = { REST: 3.50, HTTP: 1.00, WEBSOCKET: 1.00 };
+    const type = (p.apiType || "HTTP").toUpperCase();
+    return 1_000_000 / 1_000_000 * (RATES[type] || 1.00);
+  },
+  alb: () => (0.008 + 0.008) * 730,
+  vpc: (p) => {
+    const nat = p.natGateways ?? 1;
+    return nat === 0 ? 0 : (0.045 * 730 + 10 * 0.045) * nat;
+  },
+  cloudfront: () => 50 * 0.0085 + 1_000_000 / 10_000 * 0.0100,
+  external: () => 0,
+  user: () => 0,
+};
+
+function estimateMonthlyAWSCost() {
+  return state.nodes.reduce((sum, n) => {
+    const fn = AWS_PRICING[n.type];
+    return sum + (fn ? fn(n.props || {}) : 0);
+  }, 0);
+}
+
+function updateCostDisplay() {
+  if (!chatCostEl) return;
+  const awsCost = estimateMonthlyAWSCost();
+  chatCostEl.textContent = `~$${awsCost.toFixed(2)}/mo`;
+}
+
+function nodeConfigSummary(n) {
+  const p = n.props || {};
+  switch (n.type) {
+    case "lambda": return `${p.runtime || "NODEJS_20_X"} · ${p.memorySize || 512} MB · ${p.timeout || 3}s`;
+    case "ec2": return p.instanceType || "T3_MICRO";
+    case "fargate": return `${p.cpu || 256} CPU · ${p.memoryLimitMiB || 512} MB · ×${p.desiredCount || 1}`;
+    case "rds": return `${p.engine || "POSTGRES"} ${p.instanceClass || "T3"}.${p.instanceSize || "MICRO"}${p.multiAz ? " · Multi-AZ" : ""}`;
+    case "dynamodb": return `${p.billingMode || "PAY_PER_REQUEST"}${p.stream && p.stream !== "NONE" ? " · Stream" : ""}`;
+    case "s3": return `${p.encryption || "S3_MANAGED"} · ${p.versioned ? "Versioned" : "Unversioned"}`;
+    case "elasticache": return `${p.cacheNodeType || "cache.t3.micro"} · ×${p.numCacheNodes || 1}`;
+    case "sqs": return `${p.fifo ? "FIFO" : "Standard"} · vis ${p.visibilityTimeout || 30}s`;
+    case "sns": return p.fifo ? "FIFO" : "Standard";
+    case "apigateway": return `${p.apiType || "HTTP"} · stage ${p.stageName || "prod"}`;
+    case "alb": return `${p.internetFacing ? "Public" : "Internal"} · port ${p.listenerPort || 443}`;
+    case "vpc": return `${p.cidr || "10.0.0.0/16"} · ${p.maxAzs || 2} AZ · ${p.natGateways ?? 1} NAT`;
+    case "cloudfront": return `${p.priceClass || "PRICE_CLASS_100"} · ${p.httpVersion || "HTTP2"}`;
+    default: return "";
+  }
+}
+
+function renderBillingPanel() {
+  if (!billingBody) return;
+  billingBody.innerHTML = "";
+
+  const awsCost = estimateMonthlyAWSCost();
+
+  const summary = document.createElement("div");
+  summary.innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:10px;">
+      <div style="color:var(--muted);font-size:12px;">Monthly AWS (rough)</div>
+      <div style="font-family:var(--mono);font-size:13px;font-weight:600;">~$${awsCost.toFixed(2)}/mo</div>
+    </div>
+    <div style="color:var(--muted);font-size:11px;line-height:1.5;margin-bottom:10px;">
+      Assumptions: Lambda 1M invocations/mo, DynamoDB 1M reads + 500K writes + 1 GB, S3 10 GB + 100K PUT + 1M GET, SQS/SNS 2M req, CloudFront 50 GB + 1M req. On-demand pricing.
+    </div>
+  `;
+  billingBody.appendChild(summary);
+
+  const billable = state.nodes
+    .filter(n => AWS_PRICING[n.type] && n.type !== "external" && n.type !== "user")
+    .map(n => ({ ...n, est: AWS_PRICING[n.type](n.props || {}) }))
+    .sort((a, b) => b.est - a.est);
+
+  const title = document.createElement("div");
+  title.textContent = "AWS resources (estimated)";
+  title.style.fontSize = "11px";
+  title.style.letterSpacing = "0.06em";
+  title.style.textTransform = "uppercase";
+  title.style.color = "var(--muted)";
+  title.style.margin = "8px 0 6px";
+  billingBody.appendChild(title);
+
+  if (!billable.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No billable AWS resources in diagram yet.";
+    empty.style.color = "var(--muted)";
+    empty.style.fontStyle = "italic";
+    empty.style.fontSize = "13px";
+    billingBody.appendChild(empty);
+    return;
+  }
+
+  for (const n of billable) {
+    const meta = SERVICE_META[n.type] || { label: n.type, color: "#888" };
+    const row = document.createElement("div");
+    row.style.display = "grid";
+    row.style.gridTemplateColumns = "10px 1fr auto";
+    row.style.gap = "8px";
+    row.style.alignItems = "center";
+    row.style.padding = "8px 8px";
+    row.style.border = "1px solid var(--line)";
+    row.style.borderRadius = "8px";
+    row.style.marginBottom = "6px";
+    row.innerHTML = `
+      <span style="width:10px;height:10px;border-radius:50%;background:${meta.color};display:inline-block"></span>
+      <div style="min-width:0">
+        <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.label || meta.label}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${meta.label} · ${nodeConfigSummary(n)}</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:12px;white-space:nowrap">${n.est === 0 ? "free tier" : `$${n.est.toFixed(2)}/mo`}</div>
+    `;
+    billingBody.appendChild(row);
+  }
+}
+
+// ── Locator ────────────────────────────────────────────────────────────────
+
+function centerOnNode(id) {
+  const n = state.nodes.find((x) => x.id === id);
+  if (!n) return;
+  const rect = canvas.getBoundingClientRect();
+  const nw = nodeWidth(n);
+  const cx = n.x + nw / 2;
+  const cy = n.y + NODE_H / 2;
+  viewport.x = rect.width / 2 - cx * viewport.z;
+  viewport.y = rect.height / 2 - cy * viewport.z;
+  viewportG.setAttribute("transform", `translate(${viewport.x} ${viewport.y}) scale(${viewport.z})`);
+}
+
+function findBestNodeMatch(query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return null;
+  let best = null;
+  for (const n of state.nodes) {
+    const meta = SERVICE_META[n.type] || { label: n.type };
+    const name = (n.label || meta.label || n.type);
+    const hay = `${name} ${n.id} ${n.type} ${meta.label}`.toLowerCase();
+    if (!hay.includes(q)) continue;
+    // Prefer label/name matches over id/type-only matches.
+    const score =
+      (name.toLowerCase().includes(q) ? 3 : 0) +
+      (String(n.id).toLowerCase().includes(q) ? 2 : 0) +
+      (String(n.type).toLowerCase().includes(q) ? 1 : 0);
+    if (!best || score > best.score) best = { n, score };
+  }
+  return best?.n || null;
+}
+
+function topSearchCandidates(query) {
+  const q = (query || "").trim().toLowerCase();
+  const items = state.nodes.map((n) => {
+    const meta = SERVICE_META[n.type] || { label: n.type, color: "#888" };
+    const name = (n.label || meta.label || n.type);
+    const hay = `${name} ${n.id} ${n.type} ${meta.label}`.toLowerCase();
+    const score =
+      (q && hay.includes(q) ? 10 : 0) +
+      (q && name.toLowerCase().includes(q) ? 4 : 0) +
+      (q && String(n.id).toLowerCase().includes(q) ? 2 : 0) +
+      (!q ? 1 : 0);
+    return { n, meta, name, hay, score };
+  });
+  return items
+    .filter((x) => {
+      if (!q) return true;
+      return x.hay.includes(q);
+    })
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .slice(0, 8);
+}
+
+let _topSuggestIndex = -1;
+
+function hideTopSuggest() {
+  if (!topSearchSuggest) return;
+  topSearchSuggest.style.display = "none";
+  topSearchSuggest.innerHTML = "";
+  _topSuggestIndex = -1;
+}
+
+function renderTopSuggest() {
+  if (!topSearch || !topSearchSuggest) return;
+  const items = topSearchCandidates(topSearch.value);
+  if (!items.length) return hideTopSuggest();
+  topSearchSuggest.innerHTML = "";
+  topSearchSuggest.style.display = "";
+  items.forEach((it, idx) => {
+    const el = document.createElement("div");
+    el.className = "top-suggest-item";
+    el.dataset.idx = String(idx);
+    el.innerHTML = `
+      <span class="top-suggest-dot" style="background:${it.meta.color || "#888"}"></span>
+      <div style="min-width:0">
+        <div class="top-suggest-name">${escapeHtml(it.name)}</div>
+        <div class="top-suggest-sub">${escapeHtml(it.meta.label || it.n.type)} · ${escapeHtml(it.n.id)}</div>
+      </div>
+      <div class="top-suggest-kbd">↵</div>
+    `;
+    el.addEventListener("mousedown", (e) => {
+      // Prevent input blur before click handler runs.
+      e.preventDefault();
+    });
+    el.addEventListener("click", () => {
+      applySelection("node", it.n.id);
+      centerOnNode(it.n.id);
+      render();
+      setRightPane("inspector");
+      hideTopSuggest();
+      topSearch.blur();
+    });
+    topSearchSuggest.appendChild(el);
+  });
+}
+
+function setTopSuggestActive(idx) {
+  _topSuggestIndex = idx;
+  topSearchSuggest?.querySelectorAll(".top-suggest-item").forEach((el) => {
+    el.classList.toggle("active", Number(el.dataset.idx) === idx);
+  });
+}
+
+topSearch?.addEventListener("input", () => {
+  renderTopSuggest();
+});
+
+topSearch?.addEventListener("focus", () => {
+  renderTopSuggest();
+});
+
+topSearch?.addEventListener("blur", () => {
+  // Small delay so clicks on suggestions register.
+  setTimeout(() => hideTopSuggest(), 120);
+});
+
+topSearch?.addEventListener("keydown", (e) => {
+  if (!topSearchSuggest || topSearchSuggest.style.display === "none") {
+    if (e.key === "Enter") {
+      const n = findBestNodeMatch(topSearch.value);
+      if (!n) return;
+      applySelection("node", n.id);
+      centerOnNode(n.id);
+      render();
+      setRightPane("inspector");
+      hideTopSuggest();
+      topSearch.blur();
+    }
+    return;
+  }
+
+  const items = Array.from(topSearchSuggest.querySelectorAll(".top-suggest-item"));
+  if (!items.length) return;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    const next = Math.min(items.length - 1, _topSuggestIndex + 1);
+    setTopSuggestActive(next);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    const next = Math.max(0, _topSuggestIndex - 1);
+    setTopSuggestActive(next);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    hideTopSuggest();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const pick = items[Math.max(0, _topSuggestIndex)];
+    pick?.click();
+  }
 });
 
 const canvasWrap = document.querySelector(".canvas-wrap");
@@ -536,6 +961,47 @@ canvas.addEventListener("mousedown", e => {
   }
 });
 
+canvas.addEventListener("contextmenu", (e) => {
+  const t = e.target;
+  const nodeGroup = t && t.closest ? t.closest(".node-group") : null;
+  const edgeHit = t && t.classList && t.classList.contains("edge-hit") ? t : null;
+  if (!nodeGroup && !edgeHit) return; // allow default menu on empty space
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Close search suggestions and any prior context menu.
+  hideTopSuggest();
+  hideCtxMenu();
+
+  if (nodeGroup) {
+    const id = nodeGroup.dataset.nodeId;
+    applySelection("node", id);
+    render();
+    showCtxMenu(e.clientX, e.clientY, { kind: "node", id });
+    return;
+  }
+  if (edgeHit) {
+    const id = edgeHit.dataset.edgeId;
+    applySelection("edge", id);
+    render();
+    showCtxMenu(e.clientX, e.clientY, { kind: "edge", id });
+  }
+});
+
+window.addEventListener("click", () => hideCtxMenu());
+window.addEventListener("scroll", () => hideCtxMenu(), true);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") hideCtxMenu();
+});
+
+ctxDelete?.addEventListener("click", () => {
+  if (!_ctxTarget) return;
+  const { kind, id } = _ctxTarget;
+  hideCtxMenu();
+  if (kind === "node") deleteNode(id);
+  if (kind === "edge") deleteEdge(id);
+});
+
 window.addEventListener("mousemove", e => {
   if (!drag) return;
   if (drag.kind === "node-move") {
@@ -544,6 +1010,8 @@ window.addEventListener("mousemove", e => {
     n.x = Math.round((pt.x - drag.offsetX) / 10) * 10;
     n.y = Math.round((pt.y - drag.offsetY) / 10) * 10;
     render();
+    setTrashVisible(true);
+    setTrashHot(isPointInEl(e.clientX, e.clientY, trashDrop));
   } else if (drag.kind === "pan") {
     viewport.x = drag.vx + (e.clientX - drag.startX);
     viewport.y = drag.vy + (e.clientY - drag.startY);
@@ -557,6 +1025,12 @@ window.addEventListener("mousemove", e => {
 
 window.addEventListener("mouseup", e => {
   if (!drag) return;
+  if (drag.kind === "node-move") {
+    const overTrash = isPointInEl(e.clientX, e.clientY, trashDrop);
+    const id = drag.id;
+    setTrashVisible(false);
+    if (overTrash) deleteNode(id);
+  }
   if (drag.kind === "edge-draw") {
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const nodeGroup = target && target.closest ? target.closest(".node-group") : null;
@@ -682,6 +1156,7 @@ window.addEventListener("keydown", e => {
   }
 });
 
+
 function clientToWorld(cx, cy) {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -698,13 +1173,122 @@ document.getElementById("btnNew").addEventListener("click", () => {
   render();
 });
 
-document.getElementById("btnCopyJson").addEventListener("click", () => {
-  const btn = document.getElementById("btnCopyJson");
-  navigator.clipboard.writeText(JSON.stringify(state, null, 2)).then(() => {
-    btn.textContent = "Copied!";
-    setTimeout(() => btn.textContent = "Copy JSON", 1200);
-  });
+function downloadText(filename, text, mime = "text/plain") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+function exportJson() {
+  const name = (fileName || "diagram.arch.json").replace(/\.[^.]+$/, "") + ".arch.json";
+  downloadText(name, JSON.stringify(state, null, 2), "application/json");
+}
+
+async function exportPngImage() {
+  const svg = document.getElementById("canvas");
+  if (!svg) return;
+
+  // Clone SVG and inline the editor CSS so it renders correctly offscreen.
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  const cssText = await fetch("/diagram-editor.css").then((r) => r.text()).catch(() => "");
+  if (cssText) {
+    const defs = clone.querySelector("defs") || clone.insertBefore(document.createElementNS("http://www.w3.org/2000/svg", "defs"), clone.firstChild);
+    const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    style.textContent = cssText;
+    defs.appendChild(style);
+  }
+
+  const rect = svg.getBoundingClientRect();
+  const w = Math.max(900, Math.round(rect.width));
+  const h = Math.max(600, Math.round(rect.height));
+  clone.setAttribute("width", String(w));
+  clone.setAttribute("height", String(h));
+
+  const xml = new XMLSerializer().serializeToString(clone);
+  const svgBlob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+
+  const img = new Image();
+  img.decoding = "async";
+
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = url;
+  }).finally(() => URL.revokeObjectURL(url));
+
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = w;
+  canvasEl.height = h;
+  const ctx = canvasEl.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/png"));
+  if (!blob) return;
+
+  const pngUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = pngUrl;
+  a.download = (fileName || "diagram").replace(/\.[^.]+$/, "") + ".png";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(pngUrl), 500);
+}
+
+const btnExport = document.getElementById("btnExport");
+const exportMenu = document.getElementById("exportMenu");
+
+function toggleExportMenu(force) {
+  if (!exportMenu) return;
+  const next = typeof force === "boolean" ? force : exportMenu.style.display === "none";
+  exportMenu.style.display = next ? "" : "none";
+}
+
+btnExport?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleExportMenu();
 });
+
+document.getElementById("btnExportJson")?.addEventListener("click", () => {
+  toggleExportMenu(false);
+  exportJson();
+});
+document.getElementById("btnExportPng")?.addEventListener("click", async () => {
+  toggleExportMenu(false);
+  await exportPngImage();
+});
+
+window.addEventListener("click", () => toggleExportMenu(false));
+
+// Focus mode: hide all menus and show only canvas
+const appEl = document.querySelector(".app");
+function setFocusMode(on) {
+  if (!appEl) return;
+  appEl.classList.toggle("focus-mode", !!on);
+  const btn = document.getElementById("btnFocus");
+  if (btn) btn.textContent = on ? "⤡" : "⤢";
+}
+
+document.getElementById("btnFocus")?.addEventListener("click", () => {
+  const isOn = appEl?.classList.contains("focus-mode");
+  setFocusMode(!isOn);
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && appEl?.classList.contains("focus-mode")) setFocusMode(false);
+});
+
+document.getElementById("btnUnfocus")?.addEventListener("click", () => setFocusMode(false));
 
 // Cmd/Ctrl+S: apply JSON edits when textarea focused
 window.addEventListener("keydown", e => {
@@ -782,7 +1366,6 @@ if (__SERVER_PORT__) {
 
 // ── AI Chat ──────────────────────────────────────────────────────────────────
 
-const chatPanel    = document.getElementById("chatPanel");
 const chatMessages = document.getElementById("chatMessages");
 const chatTyping   = document.getElementById("chatTyping");
 const chatInput    = document.getElementById("chatInput");
@@ -798,13 +1381,10 @@ chatApiKey.addEventListener("change", () => {
 // Conversation history sent to the API (excludes system-note bubbles)
 let chatHistory = [];
 
-document.getElementById("btnChatAI").addEventListener("click", () => {
-  chatPanel.classList.add("open");
-  chatInput.focus();
-});
-
-document.getElementById("btnCloseChat").addEventListener("click", () => {
-  chatPanel.classList.remove("open");
+// Keep focus behavior when switching to chat via right pane tabs.
+document.querySelectorAll(".right-tab").forEach((b) => {
+  if (b.dataset.panel !== "chat") return;
+  b.addEventListener("click", () => setTimeout(() => chatInput.focus(), 0));
 });
 
 document.getElementById("btnClearChat").addEventListener("click", () => {
