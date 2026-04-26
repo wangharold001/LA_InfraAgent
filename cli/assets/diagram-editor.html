@@ -15,11 +15,21 @@ var __DIAGRAM_SERVICE_PACK__ = null;
 <div class="app">
   <div class="topbar">
     <div class="title">AWS Diagram</div>
+    <div class="top-search">
+      <input id="topSearch" class="top-search-input" placeholder="Search nodes… (jump)" autocomplete="off" />
+      <div id="topSearchSuggest" class="top-search-suggest" style="display:none"></div>
+    </div>
     <span class="file-name" id="fileName">untitled.arch.json</span>
     <button id="btnNew">New</button>
-    <button id="btnChatAI" style="background:#378add;color:#fff;border-color:#2b6fc0;font-weight:500;">Chat with AI</button>
     <button id="btnOpen">Open</button>
-    <button id="btnCopyJson">Copy JSON</button>
+    <div class="top-export">
+      <button id="btnExport">Export ▾</button>
+      <div id="exportMenu" class="top-export-menu" style="display:none">
+        <button class="top-export-item" id="btnExportJson">Download JSON</button>
+        <button class="top-export-item" id="btnExportPng">Download Image (PNG)</button>
+      </div>
+    </div>
+    <button id="btnFocus" title="Focus mode">⤢</button>
     <span id="saveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;" title="Auto-save status">auto-save off</span>
     <input type="file" id="fileInput" accept=".json" style="display:none">
   </div>
@@ -29,6 +39,11 @@ var __DIAGRAM_SERVICE_PACK__ = null;
   </div>
 
   <div class="canvas-wrap">
+    <div id="trashDrop" class="trash-drop" title="Drag nodes here to delete">🗑</div>
+    <button id="btnUnfocus" class="unfocus-btn" title="Exit focus">⤡</button>
+    <div id="ctxMenu" class="ctx-menu" style="display:none">
+      <button id="ctxDelete" class="ctx-item">Delete</button>
+    </div>
     <svg id="canvas" class="canvas" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -148,9 +163,79 @@ var __DIAGRAM_SERVICE_PACK__ = null;
     </svg>
   </div>
 
-  <div class="inspector" id="inspector">
-    <h3>Inspector</h3>
-    <div class="empty">Select a node or edge to edit its properties.</div>
+  <div class="right-pane" id="rightPane">
+    <div class="right-pane-head">
+      <button class="right-tab right-tab-primary" data-panel="chat">Chat</button>
+      <button class="right-tab active" data-panel="inspector">Inspector</button>
+      <button class="right-tab" data-panel="billing">Billing</button>
+      <span class="right-pane-meta" id="rightPaneMeta"></span>
+    </div>
+
+    <div class="right-pane-body">
+      <div class="right-panel active" id="panelInspector" data-panel="inspector">
+        <div class="inspector" id="inspector">
+          <h3>Inspector</h3>
+          <div class="empty">Select a node or edge to edit its properties.</div>
+        </div>
+      </div>
+
+      <div class="right-panel" id="panelChat" data-panel="chat">
+        <div class="chat-panel-inner">
+          <div class="chat-meta-row">
+            <span class="chat-model">claude-sonnet-4-6</span>
+            <span class="chat-cost" id="chatCost" title="Approximate monthly AWS estimate"></span>
+            <button id="btnClearChat">Clear</button>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>
+          </div>
+
+          <div class="chat-typing" id="chatTyping">
+            <span></span><span></span><span></span>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="chat-api-row">
+              <label>API Key</label>
+              <input type="password" id="chatApiKey" placeholder="sk-..." autocomplete="off">
+            </div>
+            <div class="chat-api-row">
+              <label>Mode</label>
+              <select id="chatMode" style="flex:1;padding:4px 7px;font:12px var(--mono);border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--ink);">
+                <option value="">Auto (infer from context)</option>
+                <option value="minimal">Minimal — serverless-only, zero fixed costs</option>
+                <option value="simple">Simple — one always-on tier, no VPC, single-AZ</option>
+                <option value="standard">Standard — VPC, private subnets, async decoupling</option>
+                <option value="enterprise">Enterprise — multi-AZ, caching, ALB, WAF, full HA</option>
+              </select>
+            </div>
+            <div class="chat-context-row">
+              <label>
+                <input type="checkbox" id="chatIncludeDiagram" checked>
+                Include current diagram as context
+              </label>
+            </div>
+            <div class="chat-compose">
+              <textarea id="chatInput" placeholder="Ask about your architecture…" rows="1"></textarea>
+              <button class="chat-send" id="chatSend">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-panel" id="panelBilling" data-panel="billing">
+        <div class="billing-panel-inner">
+          <div class="billing-meta-row">
+            <span class="billing-title">Estimated AWS cost</span>
+            <span class="billing-subtitle">rough · on-demand</span>
+          </div>
+          <div class="billing-scroll">
+            <div id="billingBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="json-resize-handle" id="jsonResizeHandle"></div>
@@ -163,52 +248,7 @@ var __DIAGRAM_SERVICE_PACK__ = null;
     </div>
     <textarea id="jsonEdit" style="flex:1;margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--ink);border:none;outline:none;resize:none;background:var(--surface);overflow:auto;" spellcheck="false"></textarea>
   </div>
-</div>
-
-<!-- AI Chat Panel -->
-<div class="chat-panel" id="chatPanel">
-  <div class="chat-header">
-    <div class="chat-title">Chat with AI</div>
-    <span class="chat-model">claude-sonnet-4-6</span>
-    <button id="btnClearChat">Clear</button>
-    <button id="btnCloseChat">✕</button>
-  </div>
-
-  <div class="chat-messages" id="chatMessages">
-    <div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>
-  </div>
-
-  <div class="chat-typing" id="chatTyping">
-    <span></span><span></span><span></span>
-  </div>
-
-  <div class="chat-input-area">
-    <div class="chat-api-row">
-      <label>API Key</label>
-      <input type="password" id="chatApiKey" placeholder="sk-..." autocomplete="off">
-    </div>
-    <div class="chat-api-row">
-      <label>Mode</label>
-      <select id="chatMode" style="flex:1;padding:4px 7px;font:12px var(--mono);border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--ink);">
-        <option value="">Auto (infer from context)</option>
-        <option value="minimal">Minimal — serverless-only, zero fixed costs</option>
-        <option value="simple">Simple — one always-on tier, no VPC, single-AZ</option>
-        <option value="standard">Standard — VPC, private subnets, async decoupling</option>
-        <option value="enterprise">Enterprise — multi-AZ, caching, ALB, WAF, full HA</option>
-      </select>
-    </div>
-    <div class="chat-context-row">
-      <label>
-        <input type="checkbox" id="chatIncludeDiagram" checked>
-        Include current diagram as context
-      </label>
-    </div>
-    <div class="chat-compose">
-      <textarea id="chatInput" placeholder="Ask about your architecture…" rows="1"></textarea>
-      <button class="chat-send" id="chatSend">Send</button>
-    </div>
-  </div>
-</div>
+ </div>
 
 <script src="/diagram-editor.js"></script>
 </body>

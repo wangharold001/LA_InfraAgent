@@ -348,7 +348,7 @@ export const EDGE_RELATIONSHIPS = [
   "read-write",
 ];
 
-/** Palette sections: collapsible groups, two-column grid in UI */
+/** Palette sections: categories are the primary index in UI */
 export const PALETTE_GROUPS = [
   { title: "Compute", types: ["lambda", "ec2", "fargate"] },
   {
@@ -368,18 +368,36 @@ export const PALETTE_GROUPS = [
 ];
 
 export function buildPaletteHtml() {
-  let html = "";
-  for (const g of PALETTE_GROUPS) {
-    html += `<details class="palette-group" open><summary class="palette-summary">${escapeHtmlAttr(g.title)}</summary><div class="palette-grid">`;
+  const groups = PALETTE_GROUPS.filter((g) => Array.isArray(g.types) && g.types.length);
+  const firstKey = groups[0]?.title || "";
+
+  let html = `<div class="palette-shell">`;
+  html += `<div class="palette-cats" role="tablist" aria-label="Service categories">`;
+  html += `<div class="palette-head"><span class="palette-head-title">Services</span></div>`;
+  for (const g of groups) {
+    const key = escapeHtmlAttr(g.title);
+    const active = g.title === firstKey ? " active" : "";
+    html += `<button class="palette-cat${active}" data-group="${key}" role="tab" aria-selected="${g.title === firstKey ? "true" : "false"}">${key}</button>`;
+  }
+  html += `</div>`;
+
+  html += `<div class="palette-services" id="paletteServices">`;
+  for (const g of groups) {
+    const key = escapeHtmlAttr(g.title);
+    const isActive = g.title === firstKey;
+    html += `<div class="palette-group-panel${isActive ? " active" : ""}" data-group="${key}" role="tabpanel">`;
+    html += `<div class="palette-grid">`;
     for (const t of g.types) {
       const m = SERVICE_META[t];
       if (!m) continue;
       const title = escapeHtmlAttr(m.label);
       const short = escapeHtmlAttr(m.short);
-      html += `<div class="palette-item" draggable="true" data-type="${t}" title="${title}"><span class="palette-swatch" style="background:${escapeHtmlAttr(m.color)}"></span><span class="palette-label">${short}</span></div>`;
+      // In collapsed mode the UI shows `short`; in expanded mode we show full label via CSS.
+      html += `<div class="palette-item" draggable="true" data-type="${t}" title="${title}"><span class="palette-swatch" style="background:${escapeHtmlAttr(m.color)}\"></span><span class="palette-label-short">${short}</span><span class="palette-label-full">${title}</span></div>`;
     }
-    html += `</div></details>`;
+    html += `</div></div>`;
   }
+  html += `</div></div>`;
   return html;
 }
 
