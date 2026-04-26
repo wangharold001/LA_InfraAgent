@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+*.local
+
+# Generated CDK infrastructure (optional - remove if you want to commit generated code)
+cdk-infrastructure/
+
+# CDK output
+cdk.out/
+
+# OS files
+.DS_Store

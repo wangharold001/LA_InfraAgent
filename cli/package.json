@@ -1,0 +1,29 @@
+{
+  "name": "infragen",
+  "version": "0.1.0",
+  "description": "AI-powered AWS infrastructure agent: from prompt to deployed CDK code",
+  "type": "module",
+  "bin": {
+    "infra-agent": "./bin/infra-agent.js",
+    "infra-decommission": "./bin/infra-decommission.js",
+    "diagram": "./bin/diagram.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "assets"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

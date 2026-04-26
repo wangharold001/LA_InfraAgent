@@ -93,15 +93,13 @@ InfraAgent is a single self-contained HTML file. There is nothing to install.
 
 ### Palette — Adding Services
 
-The left sidebar lists all supported AWS services grouped by category:
+The left sidebar lists supported AWS services in **collapsible categories** with a **two-column compact grid** (abbreviated labels; hover for the full service name). Drag any chip onto the canvas to place a node.
 
-- **Compute** — Lambda, EC2, Fargate
-- **Data** — RDS, DynamoDB, S3, ElastiCache
-- **Integration** — SQS, SNS, API Gateway, ALB
-- **Network** — VPC, CloudFront
-- **Other** — External (third-party system), User (client/end-user)
+Categories include **Compute**, **Data** (RDS, DynamoDB, S3, ElastiCache, OpenSearch, DocumentDB, Redshift, EFS, Athena, Glue), **Integration** (SQS, SNS, Kinesis, EventBridge, Step Functions, Scheduler, AppSync), **Network** (VPC, CloudFront, API Gateway, ALB, NLB, Route 53, WAF, ACM), **Identity & secrets** (Cognito, KMS, Secrets Manager), and **Other** (External, User).
 
-**To add a service:** click and drag any item from the palette onto the canvas. The node appears where you drop it and is immediately selected.
+To add or change the canonical type list, CDK construct mapping, and default `props`, edit [`cli/src/diagram-services.js`](cli/src/diagram-services.js) (the CLI injects this pack into generated diagram HTML).
+
+**To add a service:** click and drag any palette item onto the canvas. The node appears where you drop it and is immediately selected.
 
 ---
 
@@ -421,18 +419,105 @@ The Claude API key is stored in browser `localStorage` under the key `Claude_api
 
 ---
 
+## CLI Agent - Prompt to Deployed Infrastructure
+
+The `cli/` directory contains a **terminal-based agent** that completes the full workflow:
+
+### From Prompt → AWS Deployment in 4 Phases
+
+1. **Architecture Design** (AI Agent)
+   - Reads your repository context
+   - Uses Claude to design complete AWS architecture
+   - Includes production-ready defaults and IAM permissions
+
+2. **User Approval** (Interactive Terminal)
+   - Reviews generated resources and connections
+   - Shows detailed configuration
+   - Requires explicit approval before proceeding
+
+3. **CDK Code Generation** (AI Agent)
+   - Generates production-ready TypeScript CDK code
+   - Creates complete project (lib/, bin/, package.json, etc.)
+   - Implements all resources with exact props and methods
+
+4. **Deployment** (Automated)
+   - Runs `npm install` and builds TypeScript
+   - Bootstraps CDK environment (if needed)
+   - Deploys to your AWS account
+   - Shows stack outputs
+
+### Quick Start
+
+```bash
+cd cli
+npm install
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Run the agent
+node bin/infra-agent.js
+
+# Or install globally
+npm link
+infra-agent
+```
+
+See [cli/README.md](cli/README.md) for complete documentation.
+
+### Example Session
+
+```
+What infrastructure would you like to build?
+> I need a serverless REST API with a database
+
+🤖 Generating architecture...
+  + node  apigateway    RestAPI
+  + node  lambda        HandlerFunction
+  + node  dynamodb      AppTable
+  + edge  RestAPI → HandlerFunction (invoke)
+  + edge  HandlerFunction → AppTable (read/write)
+
+✅ Architecture generated: 3 resources, 2 connections
+
+[Shows detailed review]
+
+✅ Proceed with CDK code generation? yes
+
+🤖 Starting CDK Code Generation Agent...
+   ✓ lib/my-stack-stack.ts
+   ✓ bin/my-stack.ts
+   ✓ package.json
+   ... (7 files total)
+
+Deploy to AWS now? yes
+
+🚀 Deploying to AWS...
+✅ Deployment completed successfully!
+```
+
 ## Roadmap
 
-The following features are planned as the project grows toward its full vision:
+**Completed:**
+- ✅ AI-powered architecture design from natural language
+- ✅ Interactive approval workflow
+- ✅ CDK code generation with AI agent that references AWS documentation
+- ✅ Automated AWS deployment
+- ✅ Built-in comprehensive AWS CDK documentation (15+ services)
+- ✅ Documentation-driven code generation (research-then-write approach)
 
-- **MCP Server** — Expose `get_graph_representation`, `edit_graph_representation`, `convert_to_CFN`, and `deploy_infrastructure` as MCP tools so any MCP-compatible coding agent can drive the diagram and generate CloudFormation.
-- **CloudFormation generation** — Map the structured diagram JSON deterministically (or via LLM with AWS docs as context) to valid CFN YAML/JSON templates.
-- **CFN validation** — Enforce architectural constraints before code generation (e.g., RDS must be inside a VPC, ALB requires at least one target).
-- **AWS deployment** — Connect to a user's AWS account via credentials and deploy the generated CFN stack directly.
-- **Grouping / VPC containers** — Visual grouping of nodes inside VPC and subnet boundaries.
-- **More service types** — IAM roles, Secrets Manager, EventBridge, Step Functions, EKS, etc.
-- **Undo / Redo** — Command history for reversible edits.
-- **Diagram templates** — Pre-built starter diagrams for common patterns (three-tier web app, event-driven pipeline, etc.).
+**In Progress:**
+- **MCP Server** — Expose as MCP tools for Claude Code and other agents
+- **AWS MCP Integration** — Connect to [official AWS MCP server](https://github.com/awslabs/mcp) for real-time docs
+- **Diagram templates** — Pre-built patterns (three-tier web app, event-driven pipeline)
+
+**Planned:**
+- **Grouping / VPC containers** — Visual grouping of nodes inside VPC boundaries
+- **More service types** — IAM roles, Secrets Manager, EventBridge, Step Functions, EKS
+- **Undo / Redo** — Command history for reversible edits
+- **Multi-stack support** — Generate multiple related stacks
+- **Cost estimation** — Preview monthly costs before deployment
+- **CDK validation** — Pre-deployment checks via `cdk doctor` and linting
+
+See [cli/AWS_MCP_INTEGRATION.md](cli/AWS_MCP_INTEGRATION.md) for details on AWS documentation integration.
 
 ---
 

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AWS Diagram Editor</title>
+<link rel="stylesheet" href="/diagram-editor.css">
+<script id="cli-config">
+const __STATE_JSON_PATH__ = null;
+const __SERVER_PORT__ = null;
+var __DIAGRAM_STATE__ = null;
+var __DIAGRAM_SERVICE_PACK__ = null;
+</script>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="title">AWS Diagram</div>
+    <div class="top-search">
+      <input id="topSearch" class="top-search-input" placeholder="Search nodes… (jump)" autocomplete="off" />
+      <div id="topSearchSuggest" class="top-search-suggest" style="display:none"></div>
+    </div>
+    <span class="file-name" id="fileName">untitled.arch.json</span>
+    <button id="btnNew">New</button>
+    <button id="btnOpen">Open</button>
+    <div class="top-export">
+      <button id="btnExport">Export ▾</button>
+      <div id="exportMenu" class="top-export-menu" style="display:none">
+        <button class="top-export-item" id="btnExportJson">Download JSON</button>
+        <button class="top-export-item" id="btnExportPng">Download Image (PNG)</button>
+      </div>
+    </div>
+    <button id="btnFocus" title="Focus mode">⤢</button>
+    <span id="saveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;" title="Auto-save status">auto-save off</span>
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+  </div>
+
+  <div class="palette">
+    <!--INFRA_AGENT_PALETTE-->
+  </div>
+
+  <div class="canvas-wrap">
+    <div id="trashDrop" class="trash-drop" title="Drag nodes here to delete">🗑</div>
+    <button id="btnUnfocus" class="unfocus-btn" title="Exit focus">⤡</button>
+    <div id="ctxMenu" class="ctx-menu" style="display:none">
+      <button id="ctxDelete" class="ctx-item">Delete</button>
+    </div>
+    <svg id="canvas" class="canvas" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#2c2c2a"/>
+        </marker>
+        <marker id="arrowhead-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#378add"/>
+        </marker>
+        <symbol id="icon-lambda" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <text x="12" y="18" text-anchor="middle" fill="white" font-size="16" font-weight="600" font-family="serif">λ</text>
+        </symbol>
+        <symbol id="icon-ec2" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <rect x="3" y="5" width="15" height="4.5" rx="1" fill="none" stroke="white" stroke-width="1.3"/>
+          <rect x="3" y="14.5" width="15" height="4.5" rx="1" fill="none" stroke="white" stroke-width="1.3"/>
+          <circle cx="20" cy="7.25" r="1.2" fill="white"/>
+          <circle cx="20" cy="16.75" r="1.2" fill="white"/>
+        </symbol>
+        <symbol id="icon-fargate" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#EF9F27"/>
+          <rect x="3" y="3" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5" fill="white" opacity="0.85"/>
+        </symbol>
+        <symbol id="icon-rds" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <ellipse cx="12" cy="7" rx="6.5" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="5.5" y1="7" x2="5.5" y2="17" stroke="white" stroke-width="1.3"/>
+          <line x1="18.5" y1="7" x2="18.5" y2="17" stroke="white" stroke-width="1.3"/>
+          <ellipse cx="12" cy="17" rx="6.5" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-dynamodb" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <path d="M12 4L20 12L12 20L4 12Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1"/>
+        </symbol>
+        <symbol id="icon-s3" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#1d9e75"/>
+          <ellipse cx="12" cy="7" rx="7" ry="2.5" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="5" y1="7" x2="5" y2="18" stroke="white" stroke-width="1.3"/>
+          <line x1="19" y1="7" x2="19" y2="18" stroke="white" stroke-width="1.3"/>
+          <path d="M5 18Q12 21.5 19 18" fill="none" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-elasticache" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#378add"/>
+          <path d="M13.5 3L7 13.5H12.5L10.5 21L17 10.5H11.5Z" fill="white"/>
+        </symbol>
+        <symbol id="icon-sqs" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <rect x="3" y="7" width="13" height="2.5" rx="1.2" fill="white"/>
+          <rect x="3" y="11" width="13" height="2.5" rx="1.2" fill="white"/>
+          <rect x="3" y="15" width="13" height="2.5" rx="1.2" fill="white"/>
+          <path d="M17 12H21M19.5 10L21 12L19.5 14" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-sns" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <path d="M4 9.5V14.5L8 14.5L14 18.5V5.5L8 9.5H4Z" fill="white"/>
+          <path d="M17 9Q19 12 17 15" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M19 7Q22 12 19 17" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-apigateway" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <path d="M7 4.5V4H10.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7 19.5V20H10.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 4H17V4.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 20H17V19.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="8" y1="9" x2="16" y2="9" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="12" x2="16" y2="12" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="15" x2="13" y2="15" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-alb" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#d85a30"/>
+          <line x1="3" y1="12" x2="9" y2="12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="7" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="12" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="9" y1="12" x2="14" y2="17" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+          <rect x="14" y="4.5" width="7" height="4" rx="1" fill="white"/>
+          <rect x="14" y="10" width="7" height="4" rx="1" fill="white"/>
+          <rect x="14" y="15.5" width="7" height="4" rx="1" fill="white"/>
+        </symbol>
+        <symbol id="icon-vpc" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#888780"/>
+          <path d="M12 3L20 7V13C20 17.5 16 20.5 12 22C8 20.5 4 17.5 4 13V7Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M8.5 12L11 14.5L15.5 10" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-cloudfront" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#888780"/>
+          <circle cx="12" cy="12" r="8" fill="none" stroke="white" stroke-width="1.3"/>
+          <ellipse cx="12" cy="12" rx="3.5" ry="8" fill="none" stroke="white" stroke-width="1.3"/>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1.3"/>
+        </symbol>
+        <symbol id="icon-external" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <rect x="4" y="8" width="12" height="12" rx="1.5" fill="none" stroke="white" stroke-width="1.5"/>
+          <path d="M13 4H20V11" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="20" y1="4" x2="12" y2="12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-user" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <circle cx="12" cy="8.5" r="3.5" fill="none" stroke="white" stroke-width="1.5"/>
+          <path d="M4.5 20C4.5 16 8 14 12 14C16 14 19.5 16 19.5 20" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-generic-aws" viewBox="0 0 24 24">
+          <rect width="24" height="24" rx="3" fill="#6b6b64"/>
+          <path d="M12 5L18 8.5V15.5L12 19L6 15.5V8.5Z" fill="none" stroke="white" stroke-width="1.4" stroke-linejoin="round"/>
+          <text x="12" y="14.5" text-anchor="middle" fill="white" font-size="8" font-weight="700" font-family="ui-sans-serif">AWS</text>
+        </symbol>
+      </defs>
+      <g id="viewport">
+        <g id="edges"></g>
+        <g id="nodes"></g>
+        <g id="edgeLabels"></g>
+        <path id="edgePreview" class="edge-preview" style="display:none"></path>
+      </g>
+    </svg>
+  </div>
+
+  <div class="right-pane" id="rightPane">
+    <div class="right-pane-head">
+      <button class="right-tab right-tab-primary" data-panel="chat">Chat</button>
+      <button class="right-tab active" data-panel="inspector">Inspector</button>
+      <button class="right-tab" data-panel="billing">Billing</button>
+      <span class="right-pane-meta" id="rightPaneMeta"></span>
+    </div>
+
+    <div class="right-pane-body">
+      <div class="right-panel active" id="panelInspector" data-panel="inspector">
+        <div class="inspector" id="inspector">
+          <h3>Inspector</h3>
+          <div class="empty">Select a node or edge to edit its properties.</div>
+        </div>
+      </div>
+
+      <div class="right-panel" id="panelChat" data-panel="chat">
+        <div class="chat-panel-inner">
+          <div class="chat-meta-row">
+            <span class="chat-model">claude-sonnet-4-6</span>
+            <span class="chat-cost" id="chatCost" title="Approximate monthly AWS estimate"></span>
+            <button id="btnClearChat">Clear</button>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg system-note">Ask me anything about your AWS architecture. I can see your current diagram when "Include diagram" is checked.</div>
+          </div>
+
+          <div class="chat-typing" id="chatTyping">
+            <span></span><span></span><span></span>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="chat-api-row">
+              <label>API Key</label>
+              <input type="password" id="chatApiKey" placeholder="sk-..." autocomplete="off">
+            </div>
+            <div class="chat-api-row">
+              <label>Mode</label>
+              <select id="chatMode" style="flex:1;padding:4px 7px;font:12px var(--mono);border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--ink);">
+                <option value="">Auto (infer from context)</option>
+                <option value="minimal">Minimal — serverless-only, zero fixed costs</option>
+                <option value="simple">Simple — one always-on tier, no VPC, single-AZ</option>
+                <option value="standard">Standard — VPC, private subnets, async decoupling</option>
+                <option value="enterprise">Enterprise — multi-AZ, caching, ALB, WAF, full HA</option>
+              </select>
+            </div>
+            <div class="chat-context-row">
+              <label>
+                <input type="checkbox" id="chatIncludeDiagram" checked>
+                Include current diagram as context
+              </label>
+            </div>
+            <div class="chat-compose">
+              <textarea id="chatInput" placeholder="Ask about your architecture…" rows="1"></textarea>
+              <button class="chat-send" id="chatSend">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-panel" id="panelBilling" data-panel="billing">
+        <div class="billing-panel-inner">
+          <div class="billing-meta-row">
+            <span class="billing-title">Estimated AWS cost</span>
+            <span class="billing-subtitle">rough · on-demand</span>
+          </div>
+          <div class="billing-scroll">
+            <div id="billingBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="json-resize-handle" id="jsonResizeHandle"></div>
+  <div class="json-pane">
+    <div class="json-head">
+      <h3>Diagram JSON</h3>
+      <span class="info" id="jsonInfo">0 nodes, 0 edges</span>
+      <span id="jsonFilePath" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;"></span>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto;">Edit then Cmd+S to apply</span>
+    </div>
+    <textarea id="jsonEdit" style="flex:1;margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--ink);border:none;outline:none;resize:none;background:var(--surface);overflow:auto;" spellcheck="false"></textarea>
+  </div>
+ </div>
+
+<script src="/diagram-editor.js"></script>
+</body>
+</html>
